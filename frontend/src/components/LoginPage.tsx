@@ -3,7 +3,7 @@ import axios from 'axios'
 import './LoginPage.css'
 
 interface LoginPageProps {
-  onLoginSuccess: (key: string) => void
+  onLoginSuccess: (key: string, isMaster: boolean) => void
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
@@ -26,13 +26,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     try {
       const response = await axios.post('/api/auth/login', { key })
       if (response.data.success) {
+        const isMaster = response.data.is_master || false
         localStorage.setItem('apiKey', key)
         localStorage.setItem('userName', response.data.user_name || '')
-        setIsMasterKey(response.data.is_master || false)
-        if (response.data.is_master) {
+        localStorage.setItem('isMaster', isMaster ? '1' : '0')
+        setIsMasterKey(isMaster)
+        if (isMaster) {
           fetchKeysList(key)
         }
-        onLoginSuccess(key)
+        onLoginSuccess(key, isMaster)
       }
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Login failed'
@@ -116,9 +118,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       try {
         const response = await axios.post('/api/auth/login', { key: generatedKey })
         if (response.data.success) {
+          const isMaster = response.data.is_master || false
           localStorage.setItem('apiKey', generatedKey)
           localStorage.setItem('userName', response.data.user_name || '')
-          onLoginSuccess(generatedKey)
+          localStorage.setItem('isMaster', isMaster ? '1' : '0')
+          onLoginSuccess(generatedKey, isMaster)
         }
       } catch (err: any) {
         const errorMessage = err.response?.data?.detail || err.message || 'Login failed'

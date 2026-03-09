@@ -6,6 +6,8 @@ import CookiesList from './components/CookiesList'
 import NetflixToken from './components/NetflixToken'
 import Header from './components/Header'
 import LoginPage from './components/LoginPage'
+import AccountInfo from './components/AccountInfo'
+import KeyManager from './components/KeyManager'
 
 // Configure axios to include API key in all requests
 const configureAxios = (apiKey: string) => {
@@ -14,6 +16,7 @@ const configureAxios = (apiKey: string) => {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isMaster, setIsMaster] = useState(false)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -27,18 +30,21 @@ function App() {
   useEffect(() => {
     const savedKey = localStorage.getItem('apiKey')
     const savedUserName = localStorage.getItem('userName')
+    const savedIsMaster = localStorage.getItem('isMaster')
     if (savedKey) {
       setApiKey(savedKey)
       setUserName(savedUserName)
+      setIsMaster(savedIsMaster === '1')
       configureAxios(savedKey)
       setIsAuthenticated(true)
     }
   }, [])
 
-  const handleLoginSuccess = (key: string) => {
+  const handleLoginSuccess = (key: string, master: boolean) => {
     const savedUserName = localStorage.getItem('userName')
     setApiKey(key)
     setUserName(savedUserName)
+    setIsMaster(master)
     configureAxios(key)
     setIsAuthenticated(true)
   }
@@ -47,8 +53,10 @@ function App() {
     setIsAuthenticated(false)
     setApiKey(null)
     setUserName(null)
+    setIsMaster(false)
     localStorage.removeItem('apiKey')
     localStorage.removeItem('userName')
+    localStorage.removeItem('isMaster')
     delete axios.defaults.headers.common['X-API-Key']
     setAccountInfo(null)
     setNetflixToken(null)
@@ -118,6 +126,7 @@ function App() {
         <>
           <Header onLogout={handleLogout} userName={userName || undefined} />
           <main className="app-container">
+            {isMaster && apiKey && <KeyManager masterKey={apiKey} />}
             <div className="app-grid">
               <div className="app-section">
                 <CookieForm 
