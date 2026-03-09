@@ -658,12 +658,50 @@ body {
   background: rgba(0, 233, 255, 0.12);
 }
 
+.profiles-section h3 {
+  margin-bottom: 0.5rem;
+}
+
+.profiles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(0, 233, 255, 0.07);
+  border: 1px solid rgba(0, 233, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+}
+
+.profile-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.profile-info {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.profile-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
 .profile-badge.kids {
   color: #ffdb7e;
   border: 1px solid rgba(255, 179, 71, 0.6);
   background: rgba(255, 179, 71, 0.12);
   padding: 0.1rem 0.35rem;
   border-radius: 6px;
+  font-size: 0.75rem;
 }
 
 .cookies-summary {
