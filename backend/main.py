@@ -9,6 +9,7 @@ import asyncio
 import logging
 import secrets
 import os
+import re
 
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
@@ -189,6 +190,31 @@ def parse_cookies_auto(text: str) -> tuple[List[Cookie], List[str]]:
 
 logger = logging.getLogger(__name__)
 
+def _build_cookie_header(cookies: dict) -> str:
+    return '; '.join([f"{k}={v}" for k, v in cookies.items()])
+
+async def _discover_shakti_build(http_client: httpx.AsyncClient, headers: dict) -> list[str]:
+    """Discover active shakti build id from Netflix pages and return fallback candidates."""
+    candidates: list[str] = []
+    try:
+        resp = await http_client.get("https://www.netflix.com/browse", headers=headers)
+        if resp.status_code == 200:
+            html = resp.text
+            matches = re.findall(r"/api/shakti/([^/\"']+)/", html)
+            for m in matches:
+                if m and m not in candidates:
+                    candidates.append(m)
+    except Exception:
+        # Silent fallback to known static build ids.
+        pass
+
+    static_fallbacks = ["v1e9e8b93"]
+    for build in static_fallbacks:
+        if build not in candidates:
+            candidates.append(build)
+
+    return candidates
+
 async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional[str]]:
     """Generate Netflix auto-login token from cookies"""
     norm = {}
@@ -202,7 +228,7 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
     if not netflix_id or not secure_id:
         return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
 
-    cookie_str = '; '.join([f"{k}={v}" for k, v in cookies.items()])
+    cookie_str = _build_cookie_header(cookies)
 
     payload = {
         "operationName": "CreateAutoLoginToken",
@@ -224,24 +250,39 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
         'Cookie': cookie_str
     }
 
+    graphql_endpoints = [
+        'https://android13.prod.ftl.netflix.com/graphql',
+        'https://ios.prod.ftl.netflix.com/graphql',
+        'https://www.netflix.com/graphql'
+    ]
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as http_client:
-            resp = await http_client.post(
-                'https://android13.prod.ftl.netflix.com/graphql',
-                headers=nft_headers,
-                json=payload
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if 'data' in data and data['data'] and 'createAutoLoginToken' in data['data']:
-                    token = data['data']['createAutoLoginToken']
-                    return True, token, None
-                elif 'errors' in data:
-                    return False, None, f"API Error: {json.dumps(data.get('errors', []))}"
-                else:
-                    return False, None, "Unexpected response"
-            else:
-                return False, None, f"HTTP {resp.status_code}"
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, http2=False) as http_client:
+            last_error: Optional[str] = None
+            for endpoint in graphql_endpoints:
+                resp = await http_client.post(
+                    endpoint,
+                    headers=nft_headers,
+                    json=payload
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if 'data' in data and data['data'] and 'createAutoLoginToken' in data['data']:
+                        token = data['data']['createAutoLoginToken']
+                        return True, token, None
+                    if 'errors' in data:
+                        last_error = f"API Error: {json.dumps(data.get('errors', []))}"
+                        continue
+                    last_error = "Unexpected response"
+                    continue
+
+                if resp.status_code == 421:
+                    last_error = f"HTTP 421 from {endpoint}"
+                    continue
+
+                last_error = f"HTTP {resp.status_code} from {endpoint}"
+
+            return False, None, last_error or "Failed to generate token"
     except Exception as e:
         return False, None, str(e)
 
@@ -259,7 +300,7 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
     if not netflix_id or not secure_id:
         return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
 
-    cookie_str = '; '.join([f"{k}={v}" for k, v in cookies.items()])
+    cookie_str = _build_cookie_header(cookies)
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -272,19 +313,32 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as http_client:
-            # Try to get account info from the Netflix API
-            resp = await http_client.get(
-                'https://www.netflix.com/api/shakti/v1e9e8b93/pathEvaluator?withSize=true&materialize=true&model=harris',
-                headers=headers,
-                params={
-                    'path': json.dumps([
-                        ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
-                        ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
-                        ['paymentData', ['lastPaymentDate', 'nextPaymentDate', 'billingMethod', 'paymentMethods']]
-                    ])
-                }
-            )
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, http2=False) as http_client:
+            shakti_builds = await _discover_shakti_build(http_client, headers)
+            resp = None
+            for build in shakti_builds:
+                candidate = await http_client.get(
+                    f'https://www.netflix.com/api/shakti/{build}/pathEvaluator?withSize=true&materialize=true&model=harris',
+                    headers=headers,
+                    params={
+                        'path': json.dumps([
+                            ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
+                            ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
+                            ['paymentData', ['lastPaymentDate', 'nextPaymentDate', 'billingMethod', 'paymentMethods']]
+                        ])
+                    }
+                )
+                if candidate.status_code == 200:
+                    resp = candidate
+                    break
+                if candidate.status_code == 421:
+                    logger.warning(f"Shakti request returned 421 for build {build}, retrying fallback build...")
+                    continue
+
+                resp = candidate
+
+            if resp is None:
+                return False, None, "Failed to query Netflix account API"
             
             if resp.status_code == 200:
                 data = resp.json()
@@ -355,13 +409,21 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                             # This is a fallback - the API endpoint should work better
                             pass
                     
-                    # Get profile information
-                    resp_profiles = await http_client.get(
-                        'https://www.netflix.com/api/shakti/v1e9e8b93/profiles',
-                        headers=headers
-                    )
+                    # Get profile information (try discovered build first, then fallback build ids)
+                    resp_profiles = None
+                    for build in shakti_builds:
+                        profile_candidate = await http_client.get(
+                            f'https://www.netflix.com/api/shakti/{build}/profiles',
+                            headers=headers
+                        )
+                        if profile_candidate.status_code == 200:
+                            resp_profiles = profile_candidate
+                            break
+                        if profile_candidate.status_code == 421:
+                            logger.warning(f"Profiles request returned 421 for build {build}, retrying...")
+                            continue
                     
-                    if resp_profiles.status_code == 200:
+                    if resp_profiles is not None and resp_profiles.status_code == 200:
                         profiles_data = resp_profiles.json()
                         if 'profiles' in profiles_data:
                             account_info['profiles'] = [
