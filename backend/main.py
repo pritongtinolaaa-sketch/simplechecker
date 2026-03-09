@@ -19,6 +19,8 @@ _pw_browsers = os.getenv("PLAYWRIGHT_BROWSERS_PATH")
 if _pw_browsers:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _pw_browsers
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
 # Master Key Configuration
@@ -294,68 +296,19 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
     except Exception as e:
         return False, None, str(e)
 
-def _extract_from_falcor(falcor: dict, account_info: dict) -> None:
-    """Parse falcorCache dict and populate account_info in-place."""
-    acc = falcor.get('accountInfo', {})
-    if isinstance(acc, dict):
-        if not account_info.get('email') and isinstance(acc.get('email'), dict):
-            account_info['email'] = acc['email'].get('value')
-        if not account_info.get('country') and isinstance(acc.get('countryOfSignup'), dict):
-            account_info['country'] = acc['countryOfSignup'].get('value')
-        if not account_info.get('subscription_status') and isinstance(acc.get('membershipStatus'), dict):
-            account_info['subscription_status'] = acc['membershipStatus'].get('value')
-        if not account_info.get('account_created_date') and isinstance(acc.get('createdDate'), dict):
-            created = acc['createdDate'].get('value')
-            if isinstance(created, (int, float)):
-                account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
-            elif created:
-                account_info['account_created_date'] = str(created)
-
-    curr = falcor.get('currentAccount', {})
-    if isinstance(curr, dict):
-        if not account_info.get('plan'):
-            if isinstance(curr.get('planName'), dict):
-                account_info['plan'] = curr['planName'].get('value')
-            elif isinstance(curr.get('planType'), dict):
-                account_info['plan'] = curr['planType'].get('value')
-        if not account_info.get('streaming_quality') and isinstance(curr.get('maxStreamingQuality'), dict):
-            account_info['streaming_quality'] = curr['maxStreamingQuality'].get('value')
-
-    pay = falcor.get('paymentData', {})
-    if isinstance(pay, dict):
-        if not account_info.get('billing_date') and isinstance(pay.get('nextPaymentDate'), dict):
-            np_val = pay['nextPaymentDate'].get('value')
-            if isinstance(np_val, (int, float)):
-                np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
-            if np_val:
-                account_info['billing_date'] = str(np_val)
-        if not account_info.get('payment_method') and isinstance(pay.get('paymentMethods'), dict):
-            methods = pay['paymentMethods'].get('value', [])
-            if isinstance(methods, list) and methods:
-                m = methods[0]
-                if isinstance(m, dict):
-                    last4 = m.get('last4', '')
-                    mtype = m.get('type', 'Unknown')
-                    account_info['payment_method'] = f"{mtype} ****{last4}" if last4 else mtype
-
-
 async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict], Optional[str]]:
-    """Extract Netflix account info via Playwright — intercepts browser API calls to bypass 421."""
+    """Extract Netflix account info via Playwright using the confirmed reactContext structure."""
     norm = {}
     for k, v in cookies.items():
         norm[k] = v
         norm[k.lower()] = v
 
-    netflix_id = norm.get('NetflixId') or norm.get('netflixid')
-    secure_id = norm.get('SecureNetflixId') or norm.get('securenetflixid')
-
-    if not netflix_id or not secure_id:
+    if not (norm.get('NetflixId') or norm.get('netflixid')):
         return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
 
     try:
         from playwright.async_api import async_playwright
 
-        captured_responses: list[dict] = []
         captured_profiles: Optional[dict] = None
 
         async with async_playwright() as p:
@@ -366,7 +319,6 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
             context = await browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
-
             cookie_list = [
                 {"name": k, "value": v, "domain": ".netflix.com", "path": "/", "secure": True, "sameSite": "None"}
                 for k, v in cookies.items()
@@ -374,145 +326,161 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
             await context.add_cookies(cookie_list)
             page = await context.new_page()
 
-            # Intercept Shakti / pathEvaluator / profiles responses
+            # Capture profiles API response
             async def handle_response(response):
                 nonlocal captured_profiles
                 try:
-                    url = response.url
-                    if response.status == 200:
-                        if 'pathEvaluator' in url or 'patheval' in url.lower():
-                            body = await response.json()
-                            captured_responses.append(body)
-                        elif '/profiles' in url and 'shakti' in url:
-                            body = await response.json()
-                            captured_profiles = body
+                    if response.status == 200 and '/profiles' in response.url and 'shakti' in response.url:
+                        captured_profiles = await response.json()
                 except Exception:
                     pass
-
             page.on('response', handle_response)
 
             account_info = {}
 
             try:
-                # Load browse page — triggers Shakti calls that include account data
                 await page.goto("https://www.netflix.com/browse", timeout=35000)
                 await page.wait_for_load_state("networkidle", timeout=20000)
                 await asyncio.sleep(2)
 
                 current_url = page.url
-                logger.info(f"After browse navigation, URL: {current_url}")
+                print(f"[DEBUG] URL after browse: {current_url}", flush=True)
 
-                # If redirected to login or profiles selection, cookies are invalid/expired
                 if '/login' in current_url or '/LoginSelection' in current_url:
                     await browser.close()
                     return False, None, "Cookies are expired or invalid — Netflix redirected to login."
 
-                # --- Strategy 1: extract from intercepted Shakti pathEvaluator responses ---
-                for resp_data in captured_responses:
-                    falcor = resp_data.get('jsonGraph') or resp_data.get('falcorCache') or {}
-                    _extract_from_falcor(falcor, account_info)
+                # Extract from models.userInfo.data — confirmed working structure
+                ctx = await page.evaluate("""() => {
+                    try {
+                        const models = window.netflix?.reactContext?.models || {};
+                        const ui = models.userInfo?.data || {};
+                        const geo = models.geo?.data || {};
+                        return JSON.stringify({ userInfo: ui, geo: geo });
+                    } catch(e) { return null; }
+                }""")
 
-                # --- Strategy 2: window.netflix.reactContext embedded in page ---
-                if not account_info.get('email'):
-                    ctx_str = await page.evaluate("""() => {
-                        try {
-                            if (window.netflix && window.netflix.reactContext) {
-                                return JSON.stringify(window.netflix.reactContext);
-                            }
-                            // Also try __reactFiber / serverDrivenData
-                            const scripts = document.querySelectorAll('script[type="application/json"]');
-                            for (const s of scripts) {
-                                if (s.textContent.includes('membershipStatus') || s.textContent.includes('email')) {
-                                    return s.textContent;
-                                }
-                            }
-                            return null;
-                        } catch(e) { return null; }
-                    }""")
+                if ctx:
+                    data = json.loads(ctx)
+                    ui = data.get('userInfo', {})
+                    geo = data.get('geo', {})
 
-                    if ctx_str:
-                        try:
-                            ctx_data = json.loads(ctx_str)
-                            # Netflix wraps data in models or directly as falcorCache
-                            falcor = (
-                                ctx_data.get('falcorCache') or
-                                ctx_data.get('models', {}).get('falcorCache', {}).get('data') or
-                                {}
-                            )
-                            _extract_from_falcor(falcor, account_info)
+                    print(f"[DEBUG] userInfo: {ui}", flush=True)
 
-                            # Also check models.userInfo / memberContext
-                            models = ctx_data.get('models', {})
-                            userinfo = models.get('userInfo', {}).get('data', {})
-                            if not account_info.get('email') and userinfo.get('userGuid'):
-                                account_info['subscription_status'] = account_info.get('subscription_status') or 'CURRENT_MEMBER'
-                            member = models.get('memberContext', {}).get('data', {})
-                            if member:
-                                if not account_info.get('email'):
-                                    account_info['email'] = (member.get('userInfo') or {}).get('email')
-                                if not account_info.get('country'):
-                                    account_info['country'] = member.get('countryOfSignup')
-                        except Exception as e:
-                            logger.warning(f"reactContext parse error: {e}")
+                    if ui.get('emailAddress'):
+                        account_info['email'] = ui['emailAddress']
+                    if ui.get('membershipStatus') and ui['membershipStatus'] != 'ANONYMOUS':
+                        account_info['subscription_status'] = ui['membershipStatus']
+                    if ui.get('countryOfSignup'):
+                        account_info['country'] = ui['countryOfSignup']
+                    elif geo.get('requestCountry', {}).get('id'):
+                        account_info['country'] = geo['requestCountry']['id']
+                    if ui.get('memberSince'):
+                        ms = ui['memberSince']
+                        if isinstance(ms, (int, float)):
+                            account_info['account_created_date'] = datetime.utcfromtimestamp(ms / 1000).strftime('%Y-%m-%d')
+                        else:
+                            account_info['account_created_date'] = str(ms)
 
-                # --- Strategy 3: Navigate to YourAccount page for richer data ---
-                if not account_info.get('email') or not account_info.get('plan'):
-                    await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                    await asyncio.sleep(2)
+                # Use browser's own fetch() to call Shakti — avoids 421 since it's inside the real session
+                shakti_data = await page.evaluate("""async () => {
+                    try {
+                        // Discover build ID from page scripts
+                        let build = 'mre';
+                        const scripts = [...document.querySelectorAll('script[src]')];
+                        for (const s of scripts) {
+                            const m = s.src.match(/\\/api\\/shakti\\/([^/]+)\\//);
+                            if (m) { build = m[1]; break; }
+                        }
+                        // Also check window for known build
+                        const ctx = window.netflix?.reactContext;
+                        if (ctx?.serverDefs?.data?.BUILD_IDENTIFIER) {
+                            build = ctx.serverDefs.data.BUILD_IDENTIFIER;
+                        }
+                        const path = JSON.stringify([
+                            ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
+                            ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
+                            ['paymentData', ['nextPaymentDate', 'billingMethod', 'paymentMethods']]
+                        ]);
+                        const url = `/api/shakti/${build}/pathEvaluator?withSize=true&materialize=true&model=harris&path=${encodeURIComponent(path)}`;
+                        const resp = await fetch(url, { credentials: 'include' });
+                        if (resp.ok) return await resp.json();
+                        return { error: resp.status };
+                    } catch(e) { return { error: e.message }; }
+                }""")
 
-                    # Check intercepted responses again after account page load
-                    for resp_data in captured_responses:
-                        falcor = resp_data.get('jsonGraph') or resp_data.get('falcorCache') or {}
-                        _extract_from_falcor(falcor, account_info)
+                print(f"[DEBUG] shakti_data keys: {list(shakti_data.keys()) if isinstance(shakti_data, dict) else shakti_data}", flush=True)
 
-                    # DOM fallbacks on account page
-                    selectors = {
-                        'email': ['[data-uia="account-email"]', '.account-section-email', 'span.account-email'],
-                        'plan': ['[data-uia="plan-label"]', '.planLabel', '.current-plan-details'],
-                    }
-                    for field, sels in selectors.items():
-                        if not account_info.get(field):
-                            for sel in sels:
-                                try:
-                                    el = await page.query_selector(sel)
-                                    if el:
-                                        account_info[field] = (await el.inner_text()).strip()
-                                        break
-                                except Exception:
-                                    pass
+                if isinstance(shakti_data, dict) and 'jsonGraph' in shakti_data:
+                    jg = shakti_data['jsonGraph']
+                    print(f"[DEBUG] jsonGraph keys: {list(jg.keys())}", flush=True)
 
-                # --- Strategy 4: Profiles ---
+                    acc = jg.get('accountInfo', {})
+                    if not account_info.get('email') and isinstance(acc.get('email'), dict):
+                        account_info['email'] = acc['email'].get('value')
+                    if not account_info.get('country') and isinstance(acc.get('countryOfSignup'), dict):
+                        account_info['country'] = acc['countryOfSignup'].get('value')
+                    if not account_info.get('subscription_status') and isinstance(acc.get('membershipStatus'), dict):
+                        account_info['subscription_status'] = acc['membershipStatus'].get('value')
+                    if not account_info.get('account_created_date') and isinstance(acc.get('createdDate'), dict):
+                        created = acc['createdDate'].get('value')
+                        if isinstance(created, (int, float)):
+                            account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
+                        elif created:
+                            account_info['account_created_date'] = str(created)
+
+                    curr = jg.get('currentAccount', {})
+                    if not account_info.get('plan'):
+                        if isinstance(curr.get('planName'), dict):
+                            account_info['plan'] = curr['planName'].get('value')
+                        elif isinstance(curr.get('planType'), dict):
+                            account_info['plan'] = curr['planType'].get('value')
+                    if not account_info.get('streaming_quality') and isinstance(curr.get('maxStreamingQuality'), dict):
+                        account_info['streaming_quality'] = curr['maxStreamingQuality'].get('value')
+
+                    pay = jg.get('paymentData', {})
+                    if not account_info.get('billing_date') and isinstance(pay.get('nextPaymentDate'), dict):
+                        np_val = pay['nextPaymentDate'].get('value')
+                        if isinstance(np_val, (int, float)):
+                            np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
+                        if np_val:
+                            account_info['billing_date'] = str(np_val)
+                    if not account_info.get('payment_method') and isinstance(pay.get('paymentMethods'), dict):
+                        methods = pay['paymentMethods'].get('value', [])
+                        if isinstance(methods, list) and methods:
+                            m = methods[0]
+                            if isinstance(m, dict):
+                                last4 = m.get('last4', '')
+                                mtype = m.get('type', 'Unknown')
+                                account_info['payment_method'] = f"{mtype} ****{last4}" if last4 else mtype
+
+                # Profiles via authenticated browser fetch
                 if not captured_profiles:
                     try:
-                        # Let the browser fetch profiles (avoids 421 that httpx gets)
                         resp = await page.goto("https://www.netflix.com/api/shakti/mre/profiles", timeout=15000)
                         if resp and resp.status == 200:
-                            body = await resp.json()
-                            captured_profiles = body
+                            captured_profiles = await resp.json()
                     except Exception as pe:
-                        logger.warning(f"Profiles fetch error: {pe}")
+                        print(f"[DEBUG] Profiles error: {pe}", flush=True)
 
-                if captured_profiles and 'profiles' in captured_profiles:
+                if isinstance(captured_profiles, dict) and 'profiles' in captured_profiles:
                     account_info['profiles'] = [
                         {'name': pr.get('firstName', 'Unknown'), 'isKids': pr.get('isKids', False), 'guid': pr.get('guid', '')}
                         for pr in captured_profiles['profiles']
                     ]
 
-                logger.info(f"Extracted account_info keys: {list(account_info.keys())}")
+                print(f"[DEBUG] Final account_info: {account_info}", flush=True)
 
             except Exception as nav_err:
-                logger.warning(f"Navigation error: {nav_err}")
+                print(f"[DEBUG] Navigation error: {nav_err}", flush=True)
             finally:
                 await browser.close()
 
-        # Clean up None values
         account_info = {k: v for k, v in account_info.items() if v is not None}
 
         if account_info:
             return True, account_info, None
-        else:
-            return False, None, "Could not extract account information. Cookies may be expired or invalid."
+        return False, None, "Could not extract account information. Cookies may be expired or invalid."
 
     except ImportError:
         return False, None, "Playwright is not installed on this server."
