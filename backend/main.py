@@ -96,6 +96,15 @@ class ListKeysResponse(BaseModel):
     keys: List[dict]
     count: int
 
+class NetflixAccountInfo(BaseModel):
+    success: bool
+    email: Optional[str] = None
+    country: Optional[str] = None
+    plan: Optional[str] = None
+    subscription_status: Optional[str] = None
+    profiles: Optional[List[dict]] = None
+    error: Optional[str] = None
+
 # Cookie Parsing Functions
 def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
     """Parse Netscape format cookies (from browser dev tools)"""
@@ -231,6 +240,115 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
                 return False, None, f"HTTP {resp.status_code}"
     except Exception as e:
         return False, None, str(e)
+
+async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict], Optional[str]]:
+    """Extract Netflix account information from cookies"""
+    # Normalize cookie names
+    norm = {}
+    for k, v in cookies.items():
+        norm[k] = v
+        norm[k.lower()] = v
+
+    netflix_id = norm.get('NetflixId') or norm.get('netflixid')
+    secure_id = norm.get('SecureNetflixId') or norm.get('securenetflixid')
+
+    if not netflix_id or not secure_id:
+        return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
+
+    cookie_str = '; '.join([f"{k}={v}" for k, v in cookies.items()])
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Content-Type': 'application/json',
+        'Origin': 'https://www.netflix.com',
+        'Referer': 'https://www.netflix.com/',
+        'Cookie': cookie_str
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            # Try to get account info from the Netflix API
+            resp = await http_client.get(
+                'https://www.netflix.com/api/shakti/v1e9e8b93/pathEvaluator?withSize=true&materialize=true&model=harris',
+                headers=headers,
+                params={
+                    'path': json.dumps([
+                        ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus']],
+                        ['currentAccount', ['planName', 'planType']]
+                    ])
+                }
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                account_info = {}
+                
+                # Extract account information from the response
+                try:
+                    if 'jsonGraph' in data:
+                        json_graph = data['jsonGraph']
+                        
+                        # Extract email
+                        if 'accountInfo' in json_graph:
+                            acc_info = json_graph['accountInfo']
+                            if 'email' in acc_info and 'value' in acc_info['email']:
+                                account_info['email'] = acc_info['email']['value']
+                            if 'countryOfSignup' in acc_info and 'value' in acc_info['countryOfSignup']:
+                                account_info['country'] = acc_info['countryOfSignup']['value']
+                            if 'membershipStatus' in acc_info and 'value' in acc_info['membershipStatus']:
+                                account_info['subscription_status'] = acc_info['membershipStatus']['value']
+                        
+                        # Extract plan info
+                        if 'currentAccount' in json_graph:
+                            curr_acc = json_graph['currentAccount']
+                            if 'planName' in curr_acc and 'value' in curr_acc['planName']:
+                                account_info['plan'] = curr_acc['planName']['value']
+                            elif 'planType' in curr_acc and 'value' in curr_acc['planType']:
+                                account_info['plan'] = curr_acc['planType']['value']
+                    
+                    # Try alternate API endpoint if first one didn't work
+                    if not account_info:
+                        resp2 = await http_client.get(
+                            'https://www.netflix.com/AccountSettings',
+                            headers=headers
+                        )
+                        
+                        if resp2.status_code == 200:
+                            # Try to parse from HTML/JSON if available
+                            # This is a fallback - the API endpoint should work better
+                            pass
+                    
+                    # Get profile information
+                    resp_profiles = await http_client.get(
+                        'https://www.netflix.com/api/shakti/v1e9e8b93/profiles',
+                        headers=headers
+                    )
+                    
+                    if resp_profiles.status_code == 200:
+                        profiles_data = resp_profiles.json()
+                        if 'profiles' in profiles_data:
+                            account_info['profiles'] = [
+                                {
+                                    'name': p.get('firstName', 'Unknown'),
+                                    'isKids': p.get('isKids', False),
+                                    'guid': p.get('guid', '')
+                                }
+                                for p in profiles_data['profiles']
+                            ]
+                    
+                    if account_info:
+                        return True, account_info, None
+                    else:
+                        return False, None, "Could not extract account information from response"
+                        
+                except Exception as parse_error:
+                    return False, None, f"Error parsing account data: {str(parse_error)}"
+            else:
+                return False, None, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        return False, None, f"Request error: {str(e)}"
 
 async def get_browser_cookies_with_playwright(cookies_dict: dict) -> tuple[dict, Optional[str]]:
     """Use Playwright to get full cookie header from Netflix.com"""
@@ -522,6 +640,67 @@ async def generate_netflix_token(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating token: {str(e)}")
+
+@app.post("/api/get-account-info", response_model=NetflixAccountInfo)
+async def get_account_info(
+    request: CookieCheckRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Extract Netflix account information from cookies.
+    Returns email, plan, country, subscription status, and profiles.
+    """
+    if not request.cookies_text or not request.cookies_text.strip():
+        raise HTTPException(status_code=400, detail="cookies_text cannot be empty")
+    
+    # Parse the input cookies
+    format_type = request.format_type.lower()
+    cookies, parse_errors = [], []
+    
+    try:
+        if format_type == "netscape":
+            cookies, parse_errors = parse_netscape_cookies(request.cookies_text)
+        elif format_type == "json":
+            cookies, parse_errors = parse_json_cookies(request.cookies_text)
+        elif format_type == "auto":
+            cookies, parse_errors = parse_cookies_auto(request.cookies_text)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid format_type. Must be 'netscape', 'json', or 'auto'"
+            )
+        
+        if not cookies:
+            return NetflixAccountInfo(
+                success=False,
+                error="No cookies parsed from input"
+            )
+        
+        # Convert cookies list to dict for processing
+        cookies_dict = {cookie.name: cookie.value for cookie in cookies}
+        
+        # Get account information
+        success, account_info, error = await get_netflix_account_info(cookies_dict)
+        
+        if success and account_info:
+            return NetflixAccountInfo(
+                success=True,
+                email=account_info.get('email'),
+                country=account_info.get('country'),
+                plan=account_info.get('plan'),
+                subscription_status=account_info.get('subscription_status'),
+                profiles=account_info.get('profiles')
+            )
+        else:
+            return NetflixAccountInfo(
+                success=False,
+                error=error or "Failed to extract account information"
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error extracting account info: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

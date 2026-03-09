@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 import CookieForm from './components/CookieForm'
-import CookieDisplay from './components/CookieDisplay'
+import AccountInfo from './components/AccountInfo'
 import NetflixToken from './components/NetflixToken'
 import Header from './components/Header'
 import LoginPage from './components/LoginPage'
@@ -16,14 +16,11 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
-  const [cookies, setCookies] = useState([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [parseErrors, setParseErrors] = useState<string[]>([])
-  const [cookieCount, setCookieCount] = useState(0)
   const [netflixToken, setNetflixToken] = useState<string | null>(null)
-  const [tokenLoading, setTokenLoading] = useState(false)
   const [tokenError, setTokenError] = useState('')
+  const [accountInfo, setAccountInfo] = useState<any>(null)
+  const [accountInfoError, setAccountInfoError] = useState('')
 
   // Check if user is already logged in
   useEffect(() => {
@@ -52,87 +49,58 @@ function App() {
     localStorage.removeItem('apiKey')
     localStorage.removeItem('userName')
     delete axios.defaults.headers.common['X-API-Key']
-    setCookies([])
+    setAccountInfo(null)
     setNetflixToken(null)
-    setError('')
+    setAccountInfoError('')
+    setTokenError('')
+    setLoading(false)
   }
 
-  const handleCheckCookies = async (cookiesText: string, formatType: string) => {
+  const handleGetNetflixInfo = async (cookiesText: string, formatType: string) => {
     setLoading(true)
-    setError('')
-    setParseErrors([])
+    setAccountInfoError('')
+    setTokenError('')
+    setAccountInfo(null)
+    setNetflixToken(null)
     
     try {
-      const response = await axios.post('/api/check-cookies', {
-        cookies_text: cookiesText,
-        format_type: formatType
-      })
+      // Fetch both account info and Netflix token in parallel
+      // Always use playwright for getting Netflix token
+      const [accountResponse, tokenResponse] = await Promise.all([
+        axios.post('/api/get-account-info', {
+          cookies_text: cookiesText,
+          format_type: formatType
+        }),
+        axios.post('/api/generate-netflix-token', {
+          cookies_text: cookiesText,
+          format_type: formatType,
+          use_playwright: true
+        })
+      ])
       
-      setCookies(response.data.cookies || [])
-      setCookieCount(response.data.count || 0)
-      setParseErrors(response.data.errors || [])
+      // Handle account info response
+      if (accountResponse.data.success) {
+        setAccountInfo(accountResponse.data)
+      } else {
+        setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
+      }
       
-      if (response.data.success) {
-        console.log(`Successfully parsed ${response.data.count} cookies`)
+      // Handle token response
+      if (tokenResponse.data.success && tokenResponse.data.nftoken) {
+        setNetflixToken(tokenResponse.data.nftoken)
+      } else {
+        setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to parse cookies'
-      setError(errorMessage)
-      setCookies([])
-      setCookieCount(0)
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to process request'
+      setAccountInfoError(errorMessage)
+      setTokenError(errorMessage)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleGenerateNetflixToken = async (cookiesText: string, formatType: string, usePlaywright: boolean) => {
-    setTokenLoading(true)
-    setTokenError('')
-    setNetflixToken(null)
-    
-    try {
-      const response = await axios.post('/api/generate-netflix-token', {
-        cookies_text: cookiesText,
-        format_type: formatType,
-        use_playwright: usePlaywright
-      })
-      
-      if (response.data.success && response.data.nftoken) {
-        setNetflixToken(response.data.nftoken)
-        setCookies(response.data.cookies || [])
-        setCookieCount(response.data.cookie_count || 0)
-      } else {
-        setTokenError(response.data.error || 'Failed to generate Netflix token')
-      }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to generate Netflix token'
-      setTokenError(errorMessage)
-    } finally {
-      setTokenLoading(false)
-    }
-  }
 
-  const handleDownloadCookies = () => {
-    if (cookies.length === 0) return
-    
-    const jsonStr = JSON.stringify(cookies, null, 2)
-    const element = document.createElement('a')
-    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonStr))
-    element.setAttribute('download', 'cookies.json')
-    element.style.display = 'none'
-    document.body.appendChild(element)
-    element.click()
-    document.body.removeChild(element)
-  }
-
-  const handleCopyCookies = () => {
-    if (cookies.length === 0) return
-    
-    const jsonStr = JSON.stringify(cookies, null, 2)
-    navigator.clipboard.writeText(jsonStr).then(() => {
-      alert('Cookies copied to clipboard!')
-    })
-  }
 
   return (
     <div className="app">
@@ -145,29 +113,26 @@ function App() {
             <div className="app-grid">
               <div className="app-section">
                 <CookieForm 
-                  onSubmit={handleCheckCookies} 
-                  onGenerateToken={handleGenerateNetflixToken}
+                  onSubmit={handleGetNetflixInfo}
                   loading={loading}
-                  tokenLoading={tokenLoading}
                 />
               </div>
               
               <div className="app-section">
-                {netflixToken ? (
+                <AccountInfo 
+                  email={accountInfo?.email}
+                  country={accountInfo?.country}
+                  plan={accountInfo?.plan}
+                  subscriptionStatus={accountInfo?.subscription_status}
+                  profiles={accountInfo?.profiles}
+                  error={accountInfoError}
+                  loading={loading}
+                />
+                
+                {netflixToken && (
                   <NetflixToken 
                     token={netflixToken}
-                    cookies={cookies}
                     error={tokenError}
-                  />
-                ) : (
-                  <CookieDisplay 
-                    cookies={cookies} 
-                    loading={loading} 
-                    error={error}
-                    parseErrors={parseErrors}
-                    cookieCount={cookieCount}
-                    onDownload={handleDownloadCookies}
-                    onCopy={handleCopyCookies}
                   />
                 )}
               </div>

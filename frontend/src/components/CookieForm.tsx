@@ -2,27 +2,20 @@ import React, { useState } from 'react'
 
 interface CookieFormProps {
   onSubmit: (cookiesText: string, formatType: string) => void
-  onGenerateToken?: (cookiesText: string, formatType: string, usePlaywright: boolean) => void
   loading: boolean
-  tokenLoading?: boolean
 }
 
-const CookieForm: React.FC<CookieFormProps> = ({ onSubmit, onGenerateToken, loading, tokenLoading = false }) => {
+const CookieForm: React.FC<CookieFormProps> = ({ 
+  onSubmit,
+  loading
+}) => {
   const [cookiesText, setCookiesText] = useState('')
   const [formatType, setFormatType] = useState('auto')
-  const [usePlaywright, setUsePlaywright] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (cookiesText.trim()) {
       onSubmit(cookiesText, formatType)
-    }
-  }
-
-  const handleGenerateToken = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (cookiesText.trim() && onGenerateToken) {
-      onGenerateToken(cookiesText, formatType, usePlaywright)
     }
   }
 
@@ -40,7 +33,7 @@ const CookieForm: React.FC<CookieFormProps> = ({ onSubmit, onGenerateToken, load
           id="format"
           value={formatType} 
           onChange={(e) => setFormatType(e.target.value)}
-          disabled={loading || tokenLoading}
+          disabled={loading}
         >
           <option value="auto">Auto Detect</option>
           <option value="netscape">Netscape (Browser Dev Tools)</option>
@@ -49,50 +42,31 @@ const CookieForm: React.FC<CookieFormProps> = ({ onSubmit, onGenerateToken, load
       </div>
 
       <div className="form-group">
-        <label htmlFor="cookies">Paste Cookies:</label>
+        <label htmlFor="cookies">Paste Netflix Cookies:</label>
         <textarea
           id="cookies"
           className="cookies-textarea"
           value={cookiesText}
           onChange={(e) => setCookiesText(e.target.value)}
-          placeholder="Paste your cookies here (Netscape format or JSON)..."
-          disabled={loading || tokenLoading}
+          placeholder="Paste your Netflix cookies here (Netscape format or JSON)..."
+          disabled={loading}
           rows={12}
         />
       </div>
 
-      <div className="form-group checkbox-group">
-        <input 
-          type="checkbox"
-          id="use-playwright"
-          checked={usePlaywright}
-          onChange={(e) => setUsePlaywright(e.target.checked)}
-          disabled={loading || tokenLoading}
-        />
-        <label htmlFor="use-playwright">Use Playwright to get full cookie header (Netflix)</label>
-      </div>
-
       <div className="form-actions">
         <button 
-          type="submit" 
+          type="submit"
           className="btn btn-primary"
-          disabled={loading || tokenLoading || !cookiesText.trim()}
+          disabled={loading || !cookiesText.trim()}
         >
-          {loading ? 'Analyzing...' : 'Check Cookies'}
-        </button>
-        <button 
-          type="button"
-          onClick={handleGenerateToken}
-          className="btn btn-primary btn-netflix"
-          disabled={tokenLoading || loading || !cookiesText.trim()}
-        >
-          {tokenLoading ? 'Generating...' : '🎬 Netflix Token'}
+          {loading ? 'Processing...' : '🎬 Get Netflix Info'}
         </button>
         <button 
           type="button" 
           className="btn btn-secondary"
           onClick={handleClear}
-          disabled={loading || tokenLoading}
+          disabled={loading}
         >
           Clear
         </button>
