@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 import CookieForm from './components/CookieForm'
-import AccountInfo from './components/AccountInfo'
+import CookiesList from './components/CookiesList'
 import NetflixToken from './components/NetflixToken'
 import Header from './components/Header'
 import LoginPage from './components/LoginPage'
@@ -17,6 +17,7 @@ function App() {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [cookies, setCookies] = useState([])
   const [netflixToken, setNetflixToken] = useState<string | null>(null)
   const [tokenError, setTokenError] = useState('')
   const [accountInfo, setAccountInfo] = useState<any>(null)
@@ -51,6 +52,7 @@ function App() {
     delete axios.defaults.headers.common['X-API-Key']
     setAccountInfo(null)
     setNetflixToken(null)
+    setCookies([])
     setAccountInfoError('')
     setTokenError('')
     setLoading(false)
@@ -62,6 +64,7 @@ function App() {
     setTokenError('')
     setAccountInfo(null)
     setNetflixToken(null)
+    setCookies([])
     
     try {
       // Fetch both account info and Netflix token in parallel
@@ -85,11 +88,16 @@ function App() {
         setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
       }
       
-      // Handle token response
+      // Handle token response and extract cookies
       if (tokenResponse.data.success && tokenResponse.data.nftoken) {
         setNetflixToken(tokenResponse.data.nftoken)
       } else {
         setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
+      }
+      
+      // Store parsed cookies
+      if (tokenResponse.data.cookies && Array.isArray(tokenResponse.data.cookies)) {
+        setCookies(tokenResponse.data.cookies)
       }
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to process request'
@@ -124,6 +132,10 @@ function App() {
                   country={accountInfo?.country}
                   plan={accountInfo?.plan}
                   subscriptionStatus={accountInfo?.subscription_status}
+                  billingDate={accountInfo?.billing_date}
+                  accountCreatedDate={accountInfo?.account_created_date}
+                  paymentMethod={accountInfo?.payment_method}
+                  streamingQuality={accountInfo?.streaming_quality}
                   profiles={accountInfo?.profiles}
                   error={accountInfoError}
                   loading={loading}
@@ -135,6 +147,12 @@ function App() {
                     error={tokenError}
                   />
                 )}
+                
+                <CookiesList 
+                  cookies={cookies}
+                  accountInfo={accountInfo}
+                  loading={loading}
+                />
               </div>
             </div>
           </main>

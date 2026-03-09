@@ -11,6 +11,10 @@ interface AccountInfoProps {
   country?: string
   plan?: string
   subscriptionStatus?: string
+  billingDate?: string
+  accountCreatedDate?: string
+  paymentMethod?: string
+  streamingQuality?: string
   profiles?: Profile[]
   error?: string
   loading?: boolean
@@ -21,6 +25,10 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   country,
   plan,
   subscriptionStatus,
+  billingDate,
+  accountCreatedDate,
+  paymentMethod,
+  streamingQuality,
   profiles,
   error,
   loading
@@ -45,11 +53,11 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     )
   }
 
-  if (!email && !country && !plan) {
+  if (!email && !country && !plan && !billingDate && !paymentMethod) {
     return (
       <div className="account-info empty">
         <h2>📊 Account Information</h2>
-        <p>Click "Get Account Info" to extract account details from cookies.</p>
+        <p>Click "Get Netflix Info" to extract account details from cookies.</p>
       </div>
     )
   }
@@ -80,6 +88,34 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           <div className="info-item">
             <div className="info-label">Plan</div>
             <div className="info-value">{plan}</div>
+          </div>
+        )}
+
+        {streamingQuality && (
+          <div className="info-item">
+            <div className="info-label">Streaming Quality</div>
+            <div className="info-value">{streamingQuality}</div>
+          </div>
+        )}
+
+        {accountCreatedDate && (
+          <div className="info-item">
+            <div className="info-label">Account Created</div>
+            <div className="info-value">{accountCreatedDate}</div>
+          </div>
+        )}
+
+        {billingDate && (
+          <div className="info-item">
+            <div className="info-label">Next Billing Date</div>
+            <div className="info-value">{billingDate}</div>
+          </div>
+        )}
+
+        {paymentMethod && (
+          <div className="info-item">
+            <div className="info-label">Payment Method</div>
+            <div className="info-value">{paymentMethod}</div>
           </div>
         )}
 

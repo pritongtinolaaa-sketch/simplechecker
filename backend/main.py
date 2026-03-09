@@ -103,6 +103,10 @@ class NetflixAccountInfo(BaseModel):
     plan: Optional[str] = None
     subscription_status: Optional[str] = None
     profiles: Optional[List[dict]] = None
+    billing_date: Optional[str] = None
+    account_created_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    streaming_quality: Optional[str] = None
     error: Optional[str] = None
 
 # Cookie Parsing Functions
@@ -275,8 +279,9 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                 headers=headers,
                 params={
                     'path': json.dumps([
-                        ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus']],
-                        ['currentAccount', ['planName', 'planType']]
+                        ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
+                        ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
+                        ['paymentData', ['lastPaymentDate', 'nextPaymentDate', 'billingMethod', 'paymentMethods']]
                     ])
                 }
             )
@@ -290,7 +295,7 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                     if 'jsonGraph' in data:
                         json_graph = data['jsonGraph']
                         
-                        # Extract email
+                        # Extract email and account details
                         if 'accountInfo' in json_graph:
                             acc_info = json_graph['accountInfo']
                             if 'email' in acc_info and 'value' in acc_info['email']:
@@ -299,14 +304,44 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                                 account_info['country'] = acc_info['countryOfSignup']['value']
                             if 'membershipStatus' in acc_info and 'value' in acc_info['membershipStatus']:
                                 account_info['subscription_status'] = acc_info['membershipStatus']['value']
+                            if 'createdDate' in acc_info and 'value' in acc_info['createdDate']:
+                                # Format date if it's a timestamp
+                                created = acc_info['createdDate']['value']
+                                if isinstance(created, (int, float)):
+                                    from datetime import datetime
+                                    created = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
+                                account_info['account_created_date'] = str(created)
                         
-                        # Extract plan info
+                        # Extract plan and streaming quality info
                         if 'currentAccount' in json_graph:
                             curr_acc = json_graph['currentAccount']
                             if 'planName' in curr_acc and 'value' in curr_acc['planName']:
                                 account_info['plan'] = curr_acc['planName']['value']
                             elif 'planType' in curr_acc and 'value' in curr_acc['planType']:
                                 account_info['plan'] = curr_acc['planType']['value']
+                            if 'maxStreamingQuality' in curr_acc and 'value' in curr_acc['maxStreamingQuality']:
+                                account_info['streaming_quality'] = curr_acc['maxStreamingQuality']['value']
+                        
+                        # Extract payment info
+                        if 'paymentData' in json_graph:
+                            payment = json_graph['paymentData']
+                            if 'nextPaymentDate' in payment and 'value' in payment['nextPaymentDate']:
+                                next_payment = payment['nextPaymentDate']['value']
+                                if isinstance(next_payment, (int, float)):
+                                    from datetime import datetime
+                                    next_payment = datetime.utcfromtimestamp(next_payment / 1000).strftime('%Y-%m-%d')
+                                account_info['billing_date'] = str(next_payment)
+                            if 'paymentMethods' in payment and 'value' in payment['paymentMethods']:
+                                methods = payment['paymentMethods']['value']
+                                if isinstance(methods, list) and len(methods) > 0:
+                                    method = methods[0]
+                                    if isinstance(method, dict):
+                                        method_type = method.get('type', 'Unknown')
+                                        last4 = method.get('last4', '')
+                                        if last4:
+                                            account_info['payment_method'] = f"{method_type} ****{last4}"
+                                        else:
+                                            account_info['payment_method'] = method_type
                     
                     # Try alternate API endpoint if first one didn't work
                     if not account_info:
@@ -689,6 +724,10 @@ async def get_account_info(
                 country=account_info.get('country'),
                 plan=account_info.get('plan'),
                 subscription_status=account_info.get('subscription_status'),
+                billing_date=account_info.get('billing_date'),
+                account_created_date=account_info.get('account_created_date'),
+                payment_method=account_info.get('payment_method'),
+                streaming_quality=account_info.get('streaming_quality'),
                 profiles=account_info.get('profiles')
             )
         else:
