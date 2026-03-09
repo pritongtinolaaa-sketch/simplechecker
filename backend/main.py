@@ -385,20 +385,16 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                 # Use browser's own fetch() to call Shakti — avoids 421 since it's inside the real session
                 shakti_data = await page.evaluate("""async () => {
                     try {
-                        // Discover build ID from page scripts
                         let build = 'mre';
+                        const ctx = window.netflix?.reactContext;
+                        if (ctx?.serverDefs?.data?.BUILD_IDENTIFIER) build = ctx.serverDefs.data.BUILD_IDENTIFIER;
                         const scripts = [...document.querySelectorAll('script[src]')];
                         for (const s of scripts) {
                             const m = s.src.match(/\\/api\\/shakti\\/([^/]+)\\//);
                             if (m) { build = m[1]; break; }
                         }
-                        // Also check window for known build
-                        const ctx = window.netflix?.reactContext;
-                        if (ctx?.serverDefs?.data?.BUILD_IDENTIFIER) {
-                            build = ctx.serverDefs.data.BUILD_IDENTIFIER;
-                        }
                         const path = JSON.stringify([
-                            ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
+                            ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit', 'numAllowedDevices']],
                             ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
                             ['paymentData', ['nextPaymentDate', 'billingMethod', 'paymentMethods']]
                         ]);
@@ -409,50 +405,119 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                     } catch(e) { return { error: e.message }; }
                 }""")
 
-                print(f"[DEBUG] shakti_data keys: {list(shakti_data.keys()) if isinstance(shakti_data, dict) else shakti_data}", flush=True)
+                print(f"[DEBUG] shakti_data raw: {json.dumps(shakti_data)[:1000]}", flush=True)
 
-                if isinstance(shakti_data, dict) and 'jsonGraph' in shakti_data:
-                    jg = shakti_data['jsonGraph']
-                    print(f"[DEBUG] jsonGraph keys: {list(jg.keys())}", flush=True)
+                # Falcor response: {jsonGraph:{...}} or {value:{...}, paths:[...]} where value IS the graph
+                jg = {}
+                if isinstance(shakti_data, dict):
+                    jg = (
+                        shakti_data.get('jsonGraph') or
+                        (shakti_data.get('value') or {}).get('jsonGraph') or
+                        shakti_data.get('value') or
+                        {}
+                    )
+                    if isinstance(jg, dict):
+                        print(f"[DEBUG] jg keys: {list(jg.keys())}", flush=True)
 
+                def _falcor_val(node):
+                    """Extract value from a Falcor {$type:'atom', value:...} or plain value node."""
+                    if isinstance(node, dict):
+                        return node.get('value')
+                    return node
+
+                if isinstance(jg, dict):
                     acc = jg.get('accountInfo', {})
-                    if not account_info.get('email') and isinstance(acc.get('email'), dict):
-                        account_info['email'] = acc['email'].get('value')
-                    if not account_info.get('country') and isinstance(acc.get('countryOfSignup'), dict):
-                        account_info['country'] = acc['countryOfSignup'].get('value')
-                    if not account_info.get('subscription_status') and isinstance(acc.get('membershipStatus'), dict):
-                        account_info['subscription_status'] = acc['membershipStatus'].get('value')
-                    if not account_info.get('account_created_date') and isinstance(acc.get('createdDate'), dict):
-                        created = acc['createdDate'].get('value')
+                    if not account_info.get('email'):
+                        account_info['email'] = _falcor_val(acc.get('email'))
+                    if not account_info.get('country'):
+                        account_info['country'] = _falcor_val(acc.get('countryOfSignup')) or account_info.get('country')
+                    if not account_info.get('subscription_status'):
+                        account_info['subscription_status'] = _falcor_val(acc.get('membershipStatus')) or account_info.get('subscription_status')
+                    if not account_info.get('account_created_date'):
+                        created = _falcor_val(acc.get('createdDate'))
                         if isinstance(created, (int, float)):
                             account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
                         elif created:
                             account_info['account_created_date'] = str(created)
 
                     curr = jg.get('currentAccount', {})
+                    max_streams = _falcor_val(curr.get('maxUserLimit')) or _falcor_val(curr.get('numAllowedDevices'))
+                    print(f"[DEBUG] currentAccount: {curr}", flush=True)
+                    print(f"[DEBUG] max_streams raw: {max_streams}", flush=True)
+                    if max_streams is not None:
+                        try:
+                            n = int(max_streams)
+                            stream_plan_map = {1: "Basic (1 Screen)", 2: "Standard (2 Screens)", 4: "Premium (4 Screens)"}
+                            account_info['plan'] = stream_plan_map.get(n, f"{n} Screens")
+                            account_info['max_streams'] = n
+                        except (ValueError, TypeError):
+                            pass
                     if not account_info.get('plan'):
-                        if isinstance(curr.get('planName'), dict):
-                            account_info['plan'] = curr['planName'].get('value')
-                        elif isinstance(curr.get('planType'), dict):
-                            account_info['plan'] = curr['planType'].get('value')
-                    if not account_info.get('streaming_quality') and isinstance(curr.get('maxStreamingQuality'), dict):
-                        account_info['streaming_quality'] = curr['maxStreamingQuality'].get('value')
+                        account_info['plan'] = _falcor_val(curr.get('planName')) or _falcor_val(curr.get('planType'))
+                    if not account_info.get('streaming_quality'):
+                        account_info['streaming_quality'] = _falcor_val(curr.get('maxStreamingQuality'))
 
                     pay = jg.get('paymentData', {})
-                    if not account_info.get('billing_date') and isinstance(pay.get('nextPaymentDate'), dict):
-                        np_val = pay['nextPaymentDate'].get('value')
+                    if not account_info.get('billing_date'):
+                        np_val = _falcor_val(pay.get('nextPaymentDate'))
                         if isinstance(np_val, (int, float)):
                             np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
                         if np_val:
                             account_info['billing_date'] = str(np_val)
-                    if not account_info.get('payment_method') and isinstance(pay.get('paymentMethods'), dict):
-                        methods = pay['paymentMethods'].get('value', [])
+                    if not account_info.get('payment_method'):
+                        methods = _falcor_val(pay.get('paymentMethods'))
                         if isinstance(methods, list) and methods:
                             m = methods[0]
                             if isinstance(m, dict):
                                 last4 = m.get('last4', '')
                                 mtype = m.get('type', 'Unknown')
                                 account_info['payment_method'] = f"{mtype} ****{last4}" if last4 else mtype
+
+                # Email fallback: navigate to /YourAccount and scrape from DOM
+                if not account_info.get('email'):
+                    print(f"[DEBUG] Email not found via Shakti, loading YourAccount page...", flush=True)
+                    await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    await asyncio.sleep(1)
+                    email_selectors = [
+                        '[data-uia="account-email"]',
+                        '.account-section-email span',
+                        'span[data-uia*="email"]',
+                        '.membershipDetails span',
+                        'p.account-section-email',
+                    ]
+                    for sel in email_selectors:
+                        try:
+                            el = await page.query_selector(sel)
+                            if el:
+                                txt = (await el.inner_text()).strip()
+                                if '@' in txt:
+                                    account_info['email'] = txt
+                                    print(f"[DEBUG] Email from DOM ({sel}): {txt}", flush=True)
+                                    break
+                        except Exception:
+                            pass
+                    # Also try reactContext on YourAccount page which may have email
+                    if not account_info.get('email'):
+                        ya_ctx = await page.evaluate("""() => {
+                            try {
+                                const models = window.netflix?.reactContext?.models || {};
+                                return JSON.stringify({
+                                    userInfo: models.userInfo?.data || {},
+                                    memberContext: models.memberContext?.data || {}
+                                });
+                            } catch(e) { return null; }
+                        }""")
+                        if ya_ctx:
+                            ya_data = json.loads(ya_ctx)
+                            ya_ui = ya_data.get('userInfo', {})
+                            ya_mc = ya_data.get('memberContext', {})
+                            print(f"[DEBUG] YourAccount userInfo keys: {list(ya_ui.keys())[:10]}", flush=True)
+                            account_info['email'] = (
+                                ya_ui.get('emailAddress') or
+                                ya_mc.get('email') or
+                                (ya_mc.get('userInfo') or {}).get('email')
+                            )
 
                 # Profiles via authenticated browser fetch
                 if not captured_profiles:
