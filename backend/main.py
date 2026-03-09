@@ -10,6 +10,14 @@ import logging
 import secrets
 import os
 import re
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Ensure Playwright can find its browsers
+_pw_browsers = os.getenv("PLAYWRIGHT_BROWSERS_PATH")
+if _pw_browsers:
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _pw_browsers
 
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
@@ -338,7 +346,7 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                 resp = candidate
 
             if resp is None:
-                return False, None, "Failed to query Netflix account API"
+                return False, None, "Netflix blocked this request (HTTP 421). Netflix restricts API access from cloud/datacenter IPs. Try again or use valid cookies from a residential network."
             
             if resp.status_code == 200:
                 data = resp.json()
