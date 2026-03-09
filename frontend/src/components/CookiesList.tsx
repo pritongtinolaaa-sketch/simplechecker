@@ -32,8 +32,8 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
   const validCookies = cookies.filter(cookie => cookie.name && cookie.value)
 
   const formatAccountInfo = (info: any): string => {
-    let output = 'ACCOUNT INFORMATION\n'
-    output += '=========================\n\n'
+    let output = 'ACCOUNT INFORMATION CHECKED ON THAT COOKIE\n'
+    output += '==========================\n\n'
     
     if (info.email) output += `Email: ${info.email}\n`
     if (info.country) output += `Country: ${info.country}\n`
@@ -53,22 +53,47 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
     return output
   }
 
+  const wrapText = (text: string, maxLength: number = 100): string => {
+    const words = text.split(' ')
+    let lines: string[] = []
+    let currentLine = ''
+    
+    words.forEach(word => {
+      if ((currentLine + word).length > maxLength && currentLine) {
+        lines.push(currentLine.trim())
+        currentLine = word
+      } else {
+        currentLine += (currentLine ? ' ' : '') + word
+      }
+    })
+    
+    if (currentLine) {
+      lines.push(currentLine.trim())
+    }
+    
+    return lines.join('\n')
+  }
+
   const handleDownloadCookie = (cookie: Cookie, cookieNumber: number) => {
     let content = ''
     
     if (accountInfo) {
-      content += formatAccountInfo(accountInfo)
+      content += `-Cookie #${cookieNumber}-\n`
+      content += `Email: ${accountInfo.email || 'N/A'}\n`
+      content += `Country: ${accountInfo.country || 'N/A'}\n`
+      content += `Plan: ${accountInfo.plan || 'N/A'}\n`
+      if (accountInfo.streaming_quality) content += `Streaming Quality: ${accountInfo.streaming_quality}\n`
+      if (accountInfo.subscription_status) content += `Subscription Status: ${accountInfo.subscription_status}\n`
+      if (accountInfo.account_created_date) content += `Account Created: ${accountInfo.account_created_date}\n`
+      if (accountInfo.billing_date) content += `Next Billing Date: ${accountInfo.billing_date}\n`
+      if (accountInfo.payment_method) content += `Payment Method: ${accountInfo.payment_method}\n`
+      if (accountInfo.profiles && accountInfo.profiles.length > 0) {
+        content += `Profiles: ${accountInfo.profiles.map((p: any) => p.name).join(', ')}\n`
+      }
     }
     
-    content += `\n\nCOOKIE #${cookieNumber}\n`
-    content += '=========================\n\n'
-    content += `Name: ${cookie.name}\n`
-    content += `Value: ${cookie.value}\n`
-    if (cookie.domain) content += `Domain: ${cookie.domain}\n`
-    if (cookie.path) content += `Path: ${cookie.path}\n`
-    if (cookie.secure) content += `Secure: Yes\n`
-    if (cookie.httponly) content += `HttpOnly: Yes\n`
-    if (cookie.expires) content += `Expires: ${cookie.expires}\n`
+    content += '\n==========================\n'
+    content += wrapText(`${cookie.name}=${cookie.value}`) + '\n'
     
     const element = document.createElement('a')
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content))
@@ -85,23 +110,23 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
     let content = ''
     
     if (accountInfo) {
-      content += formatAccountInfo(accountInfo)
+      content += `-Cookie #1-\n`
+      content += `Email: ${accountInfo.email || 'N/A'}\n`
+      content += `Country: ${accountInfo.country || 'N/A'}\n`
+      content += `Plan: ${accountInfo.plan || 'N/A'}\n`
+      if (accountInfo.streaming_quality) content += `Streaming Quality: ${accountInfo.streaming_quality}\n`
+      if (accountInfo.subscription_status) content += `Subscription Status: ${accountInfo.subscription_status}\n`
+      if (accountInfo.account_created_date) content += `Account Created: ${accountInfo.account_created_date}\n`
+      if (accountInfo.billing_date) content += `Next Billing Date: ${accountInfo.billing_date}\n`
+      if (accountInfo.payment_method) content += `Payment Method: ${accountInfo.payment_method}\n`
+      if (accountInfo.profiles && accountInfo.profiles.length > 0) {
+        content += `Profiles: ${accountInfo.profiles.map((p: any) => p.name).join(', ')}\n`
+      }
     }
     
-    content += '\n\nCOOKIES (Total: ' + validCookies.length + ')\n'
-    content += '=========================\n\n'
-    
-    validCookies.forEach((cookie, idx) => {
-      const cookieNum = idx + 1
-      content += `[COOKIE #${cookieNum}] ${cookie.name}\n`
-      content += `Value: ${cookie.value}\n`
-      if (cookie.domain) content += `Domain: ${cookie.domain}\n`
-      if (cookie.path) content += `Path: ${cookie.path}\n`
-      if (cookie.secure) content += `Secure: Yes\n`
-      if (cookie.httponly) content += `HttpOnly: Yes\n`
-      if (cookie.expires) content += `Expires: ${cookie.expires}\n`
-      content += '\n'
-    })
+    content += '\n==========================\n'
+    const cookieString = validCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
+    content += wrapText(cookieString) + '\n'
     
     const element = document.createElement('a')
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content))
