@@ -473,51 +473,111 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                                 mtype = m.get('type', 'Unknown')
                                 account_info['payment_method'] = f"{mtype} ****{last4}" if last4 else mtype
 
-                # Email fallback: navigate to /YourAccount and scrape from DOM
-                if not account_info.get('email'):
-                    print(f"[DEBUG] Email not found via Shakti, loading YourAccount page...", flush=True)
-                    await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                    await asyncio.sleep(1)
-                    email_selectors = [
-                        '[data-uia="account-email"]',
-                        '.account-section-email span',
-                        'span[data-uia*="email"]',
-                        '.membershipDetails span',
-                        'p.account-section-email',
+                # Always navigate to /YourAccount — has email, plan info, and billing details
+                print(f"[DEBUG] Loading YourAccount page...", flush=True)
+                ya_intercepted: list[dict] = []
+
+                async def handle_ya_response(response):
+                    try:
+                        if response.status == 200 and 'pathEvaluator' in response.url:
+                            body = await response.json()
+                            ya_intercepted.append(body)
+                    except Exception:
+                        pass
+                page.on('response', handle_ya_response)
+
+                await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
+                await page.wait_for_load_state("networkidle", timeout=15000)
+                await asyncio.sleep(2)
+
+                # Dump ALL model keys and selected model data from YourAccount reactContext
+                ya_ctx = await page.evaluate("""() => {
+                    try {
+                        const models = window.netflix?.reactContext?.models || {};
+                        const allKeys = Object.keys(models);
+                        const out = { allModelKeys: allKeys };
+                        // Capture every model's data
+                        for (const k of allKeys) {
+                            try { out[k] = models[k]?.data || null; } catch(e) {}
+                        }
+                        return JSON.stringify(out);
+                    } catch(e) { return null; }
+                }""")
+
+                if ya_ctx:
+                    ya_data = json.loads(ya_ctx)
+                    print(f"[DEBUG] YourAccount model keys: {ya_data.get('allModelKeys', [])}", flush=True)
+
+                    ya_ui = ya_data.get('userInfo') or {}
+                    if not account_info.get('email'):
+                        account_info['email'] = ya_ui.get('emailAddress')
+                    if not account_info.get('country'):
+                        account_info['country'] = ya_ui.get('countryOfSignup') or ya_ui.get('currentCountry')
+
+                    # Search every model for plan/streams data
+                    PLAN_KEYS = ['planName', 'plan', 'planLabel', 'planType', 'currentPlan', 'subscriptionPlan']
+                    STREAM_KEYS = ['maxStreams', 'maxUserLimit', 'numAllowedDevices', 'numScreens', 'concurrentStreams', 'simultaneousStreams']
+                    for model_key, model_data in ya_data.items():
+                        if model_key in ('allModelKeys',) or not isinstance(model_data, dict):
+                            continue
+                        for pk in PLAN_KEYS:
+                            if model_data.get(pk) and not account_info.get('plan'):
+                                account_info['plan'] = str(model_data[pk])
+                                print(f"[DEBUG] Plan from model [{model_key}][{pk}]: {account_info['plan']}", flush=True)
+                        for sk in STREAM_KEYS:
+                            if model_data.get(sk) is not None and not account_info.get('max_streams'):
+                                try:
+                                    account_info['max_streams'] = int(model_data[sk])
+                                    print(f"[DEBUG] Streams from model [{model_key}][{sk}]: {account_info['max_streams']}", flush=True)
+                                except (ValueError, TypeError):
+                                    pass
+
+                # Also check intercepted pathEvaluator calls made on YourAccount page
+                print(f"[DEBUG] YourAccount intercepted {len(ya_intercepted)} pathEvaluator responses", flush=True)
+                for resp_data in ya_intercepted:
+                    ya_jg = (
+                        resp_data.get('jsonGraph') or
+                        (resp_data.get('value') or {}).get('jsonGraph') or
+                        resp_data.get('value') or {}
+                    )
+                    print(f"[DEBUG] YourAccount jg keys: {list(ya_jg.keys()) if isinstance(ya_jg, dict) else ya_jg}", flush=True)
+                    if isinstance(ya_jg, dict):
+                        for pk in ['planName', 'plan', 'planLabel', 'planType']:
+                            if ya_jg.get(pk) and not account_info.get('plan'):
+                                account_info['plan'] = _falcor_val(ya_jg[pk])
+                        for sk in ['maxStreams', 'maxUserLimit', 'numAllowedDevices', 'numScreens']:
+                            if ya_jg.get(sk) is not None and not account_info.get('max_streams'):
+                                v = _falcor_val(ya_jg[sk])
+                                if v is not None:
+                                    try:
+                                        account_info['max_streams'] = int(v)
+                                    except (ValueError, TypeError):
+                                        pass
+
+                # DOM scraping fallback for plan on YourAccount page
+                if not account_info.get('plan') and not account_info.get('max_streams'):
+                    plan_sels = [
+                        '[data-uia="plan-label"]', '[data-uia="plan-name"]',
+                        '.planLabel', '.plan-label', '.current-plan',
+                        '[data-uia="membership-status"]',
                     ]
-                    for sel in email_selectors:
+                    for sel in plan_sels:
                         try:
                             el = await page.query_selector(sel)
                             if el:
                                 txt = (await el.inner_text()).strip()
-                                if '@' in txt:
-                                    account_info['email'] = txt
-                                    print(f"[DEBUG] Email from DOM ({sel}): {txt}", flush=True)
+                                if txt:
+                                    account_info['plan'] = txt
+                                    print(f"[DEBUG] Plan from DOM ({sel}): {txt}", flush=True)
                                     break
                         except Exception:
                             pass
-                    # Also try reactContext on YourAccount page which may have email
-                    if not account_info.get('email'):
-                        ya_ctx = await page.evaluate("""() => {
-                            try {
-                                const models = window.netflix?.reactContext?.models || {};
-                                return JSON.stringify({
-                                    userInfo: models.userInfo?.data || {},
-                                    memberContext: models.memberContext?.data || {}
-                                });
-                            } catch(e) { return null; }
-                        }""")
-                        if ya_ctx:
-                            ya_data = json.loads(ya_ctx)
-                            ya_ui = ya_data.get('userInfo', {})
-                            ya_mc = ya_data.get('memberContext', {})
-                            print(f"[DEBUG] YourAccount userInfo keys: {list(ya_ui.keys())[:10]}", flush=True)
-                            account_info['email'] = (
-                                ya_ui.get('emailAddress') or
-                                ya_mc.get('email') or
-                                (ya_mc.get('userInfo') or {}).get('email')
-                            )
+
+                # Map max_streams to plan name if plan still unknown
+                if not account_info.get('plan') and account_info.get('max_streams'):
+                    n = account_info['max_streams']
+                    stream_plan_map = {1: "Basic (1 Screen)", 2: "Standard (2 Screens)", 4: "Premium (4 Screens)"}
+                    account_info['plan'] = stream_plan_map.get(n, f"{n} Screens")
 
                 # Profiles via authenticated browser fetch
                 if not captured_profiles:
