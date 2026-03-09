@@ -294,8 +294,53 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
     except Exception as e:
         return False, None, str(e)
 
+def _extract_from_falcor(falcor: dict, account_info: dict) -> None:
+    """Parse falcorCache dict and populate account_info in-place."""
+    acc = falcor.get('accountInfo', {})
+    if isinstance(acc, dict):
+        if not account_info.get('email') and isinstance(acc.get('email'), dict):
+            account_info['email'] = acc['email'].get('value')
+        if not account_info.get('country') and isinstance(acc.get('countryOfSignup'), dict):
+            account_info['country'] = acc['countryOfSignup'].get('value')
+        if not account_info.get('subscription_status') and isinstance(acc.get('membershipStatus'), dict):
+            account_info['subscription_status'] = acc['membershipStatus'].get('value')
+        if not account_info.get('account_created_date') and isinstance(acc.get('createdDate'), dict):
+            created = acc['createdDate'].get('value')
+            if isinstance(created, (int, float)):
+                account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
+            elif created:
+                account_info['account_created_date'] = str(created)
+
+    curr = falcor.get('currentAccount', {})
+    if isinstance(curr, dict):
+        if not account_info.get('plan'):
+            if isinstance(curr.get('planName'), dict):
+                account_info['plan'] = curr['planName'].get('value')
+            elif isinstance(curr.get('planType'), dict):
+                account_info['plan'] = curr['planType'].get('value')
+        if not account_info.get('streaming_quality') and isinstance(curr.get('maxStreamingQuality'), dict):
+            account_info['streaming_quality'] = curr['maxStreamingQuality'].get('value')
+
+    pay = falcor.get('paymentData', {})
+    if isinstance(pay, dict):
+        if not account_info.get('billing_date') and isinstance(pay.get('nextPaymentDate'), dict):
+            np_val = pay['nextPaymentDate'].get('value')
+            if isinstance(np_val, (int, float)):
+                np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
+            if np_val:
+                account_info['billing_date'] = str(np_val)
+        if not account_info.get('payment_method') and isinstance(pay.get('paymentMethods'), dict):
+            methods = pay['paymentMethods'].get('value', [])
+            if isinstance(methods, list) and methods:
+                m = methods[0]
+                if isinstance(m, dict):
+                    last4 = m.get('last4', '')
+                    mtype = m.get('type', 'Unknown')
+                    account_info['payment_method'] = f"{mtype} ****{last4}" if last4 else mtype
+
+
 async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict], Optional[str]]:
-    """Extract Netflix account information using Playwright to bypass 421 IP blocks."""
+    """Extract Netflix account info via Playwright — intercepts browser API calls to bypass 421."""
     norm = {}
     for k, v in cookies.items():
         norm[k] = v
@@ -309,6 +354,9 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
 
     try:
         from playwright.async_api import async_playwright
+
+        captured_responses: list[dict] = []
+        captured_profiles: Optional[dict] = None
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -326,141 +374,145 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
             await context.add_cookies(cookie_list)
             page = await context.new_page()
 
+            # Intercept Shakti / pathEvaluator / profiles responses
+            async def handle_response(response):
+                nonlocal captured_profiles
+                try:
+                    url = response.url
+                    if response.status == 200:
+                        if 'pathEvaluator' in url or 'patheval' in url.lower():
+                            body = await response.json()
+                            captured_responses.append(body)
+                        elif '/profiles' in url and 'shakti' in url:
+                            body = await response.json()
+                            captured_profiles = body
+                except Exception:
+                    pass
+
+            page.on('response', handle_response)
+
             account_info = {}
 
             try:
-                # Navigate to browse to establish session
-                await page.goto("https://www.netflix.com/browse", timeout=30000)
-                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                # Load browse page — triggers Shakti calls that include account data
+                await page.goto("https://www.netflix.com/browse", timeout=35000)
+                await page.wait_for_load_state("networkidle", timeout=20000)
                 await asyncio.sleep(2)
 
-                # Extract embedded Netflix context data (falcorCache / reactContext)
-                react_ctx = await page.evaluate("""() => {
-                    try {
-                        return window.netflix && window.netflix.reactContext
-                            ? JSON.stringify(window.netflix.reactContext)
-                            : null;
-                    } catch(e) { return null; }
-                }""")
+                current_url = page.url
+                logger.info(f"After browse navigation, URL: {current_url}")
 
-                if react_ctx:
-                    try:
-                        ctx_data = json.loads(react_ctx)
-                        models = ctx_data.get('models', {})
+                # If redirected to login or profiles selection, cookies are invalid/expired
+                if '/login' in current_url or '/LoginSelection' in current_url:
+                    await browser.close()
+                    return False, None, "Cookies are expired or invalid — Netflix redirected to login."
 
-                        user_info = models.get('userInfo', {}).get('data', {})
-                        if user_info.get('userGuid'):
-                            account_info['subscription_status'] = 'CURRENT_MEMBER' if user_info.get('isAdultVerified') is not None else None
+                # --- Strategy 1: extract from intercepted Shakti pathEvaluator responses ---
+                for resp_data in captured_responses:
+                    falcor = resp_data.get('jsonGraph') or resp_data.get('falcorCache') or {}
+                    _extract_from_falcor(falcor, account_info)
 
-                        member_info = models.get('memberContext', {}).get('data', {})
-                        if member_info:
-                            account_info['email'] = member_info.get('userInfo', {}).get('email') or account_info.get('email')
-                            account_info['country'] = member_info.get('countryOfSignup') or account_info.get('country')
-
-                        # Try falcorCache for richer data
-                        falcor = ctx_data.get('falcorCache', {})
-                        if falcor:
-                            acc = falcor.get('accountInfo', {})
-                            if acc.get('email', {}).get('value'):
-                                account_info['email'] = acc['email']['value']
-                            if acc.get('countryOfSignup', {}).get('value'):
-                                account_info['country'] = acc['countryOfSignup']['value']
-                            if acc.get('membershipStatus', {}).get('value'):
-                                account_info['subscription_status'] = acc['membershipStatus']['value']
-                            if acc.get('createdDate', {}).get('value'):
-                                created = acc['createdDate']['value']
-                                if isinstance(created, (int, float)):
-                                    account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
-                                else:
-                                    account_info['account_created_date'] = str(created)
-
-                            curr = falcor.get('currentAccount', {})
-                            if curr.get('planName', {}).get('value'):
-                                account_info['plan'] = curr['planName']['value']
-                            elif curr.get('planType', {}).get('value'):
-                                account_info['plan'] = curr['planType']['value']
-                            if curr.get('maxStreamingQuality', {}).get('value'):
-                                account_info['streaming_quality'] = curr['maxStreamingQuality']['value']
-
-                            pay = falcor.get('paymentData', {})
-                            if pay.get('nextPaymentDate', {}).get('value'):
-                                np_val = pay['nextPaymentDate']['value']
-                                if isinstance(np_val, (int, float)):
-                                    np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
-                                account_info['billing_date'] = str(np_val)
-                    except Exception as parse_err:
-                        logger.warning(f"reactContext parse error: {parse_err}")
-
-                # Navigate to account page to extract email / plan if not yet found
-                if not account_info.get('email') or not account_info.get('plan'):
-                    await page.goto("https://www.netflix.com/account", timeout=30000)
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                    await asyncio.sleep(2)
-
-                    # Try extracting from embedded JSON on account page
-                    acct_ctx = await page.evaluate("""() => {
+                # --- Strategy 2: window.netflix.reactContext embedded in page ---
+                if not account_info.get('email'):
+                    ctx_str = await page.evaluate("""() => {
                         try {
-                            return window.netflix && window.netflix.reactContext
-                                ? JSON.stringify(window.netflix.reactContext)
-                                : null;
+                            if (window.netflix && window.netflix.reactContext) {
+                                return JSON.stringify(window.netflix.reactContext);
+                            }
+                            // Also try __reactFiber / serverDrivenData
+                            const scripts = document.querySelectorAll('script[type="application/json"]');
+                            for (const s of scripts) {
+                                if (s.textContent.includes('membershipStatus') || s.textContent.includes('email')) {
+                                    return s.textContent;
+                                }
+                            }
+                            return null;
                         } catch(e) { return null; }
                     }""")
 
-                    if acct_ctx:
+                    if ctx_str:
                         try:
-                            acct_data = json.loads(acct_ctx)
-                            falcor2 = acct_data.get('falcorCache', {})
-                            if falcor2:
-                                acc2 = falcor2.get('accountInfo', {})
-                                if not account_info.get('email') and acc2.get('email', {}).get('value'):
-                                    account_info['email'] = acc2['email']['value']
-                                if not account_info.get('country') and acc2.get('countryOfSignup', {}).get('value'):
-                                    account_info['country'] = acc2['countryOfSignup']['value']
-                                if not account_info.get('subscription_status') and acc2.get('membershipStatus', {}).get('value'):
-                                    account_info['subscription_status'] = acc2['membershipStatus']['value']
-                                curr2 = falcor2.get('currentAccount', {})
-                                if not account_info.get('plan') and curr2.get('planName', {}).get('value'):
-                                    account_info['plan'] = curr2['planName']['value']
-                                if not account_info.get('streaming_quality') and curr2.get('maxStreamingQuality', {}).get('value'):
-                                    account_info['streaming_quality'] = curr2['maxStreamingQuality']['value']
-                        except Exception:
-                            pass
+                            ctx_data = json.loads(ctx_str)
+                            # Netflix wraps data in models or directly as falcorCache
+                            falcor = (
+                                ctx_data.get('falcorCache') or
+                                ctx_data.get('models', {}).get('falcorCache', {}).get('data') or
+                                {}
+                            )
+                            _extract_from_falcor(falcor, account_info)
 
-                    # DOM fallback for email
-                    if not account_info.get('email'):
-                        try:
-                            email_el = await page.query_selector('[data-uia="account-email"]')
-                            if email_el:
-                                account_info['email'] = (await email_el.inner_text()).strip()
-                        except Exception:
-                            pass
+                            # Also check models.userInfo / memberContext
+                            models = ctx_data.get('models', {})
+                            userinfo = models.get('userInfo', {}).get('data', {})
+                            if not account_info.get('email') and userinfo.get('userGuid'):
+                                account_info['subscription_status'] = account_info.get('subscription_status') or 'CURRENT_MEMBER'
+                            member = models.get('memberContext', {}).get('data', {})
+                            if member:
+                                if not account_info.get('email'):
+                                    account_info['email'] = (member.get('userInfo') or {}).get('email')
+                                if not account_info.get('country'):
+                                    account_info['country'] = member.get('countryOfSignup')
+                        except Exception as e:
+                            logger.warning(f"reactContext parse error: {e}")
 
-                # Get profiles
-                try:
-                    await page.goto("https://www.netflix.com/api/shakti/mre/profiles", timeout=20000)
-                    profiles_text = await page.content()
-                    # Strip HTML tags to get JSON body
-                    import re as _re
-                    json_match = _re.search(r'\{.*\}', profiles_text, _re.DOTALL)
-                    if json_match:
-                        profiles_data = json.loads(json_match.group())
-                        if 'profiles' in profiles_data:
-                            account_info['profiles'] = [
-                                {'name': pr.get('firstName', 'Unknown'), 'isKids': pr.get('isKids', False), 'guid': pr.get('guid', '')}
-                                for pr in profiles_data['profiles']
-                            ]
-                except Exception as pe:
-                    logger.warning(f"Profiles fetch error: {pe}")
+                # --- Strategy 3: Navigate to YourAccount page for richer data ---
+                if not account_info.get('email') or not account_info.get('plan'):
+                    await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    await asyncio.sleep(2)
+
+                    # Check intercepted responses again after account page load
+                    for resp_data in captured_responses:
+                        falcor = resp_data.get('jsonGraph') or resp_data.get('falcorCache') or {}
+                        _extract_from_falcor(falcor, account_info)
+
+                    # DOM fallbacks on account page
+                    selectors = {
+                        'email': ['[data-uia="account-email"]', '.account-section-email', 'span.account-email'],
+                        'plan': ['[data-uia="plan-label"]', '.planLabel', '.current-plan-details'],
+                    }
+                    for field, sels in selectors.items():
+                        if not account_info.get(field):
+                            for sel in sels:
+                                try:
+                                    el = await page.query_selector(sel)
+                                    if el:
+                                        account_info[field] = (await el.inner_text()).strip()
+                                        break
+                                except Exception:
+                                    pass
+
+                # --- Strategy 4: Profiles ---
+                if not captured_profiles:
+                    try:
+                        # Let the browser fetch profiles (avoids 421 that httpx gets)
+                        resp = await page.goto("https://www.netflix.com/api/shakti/mre/profiles", timeout=15000)
+                        if resp and resp.status == 200:
+                            body = await resp.json()
+                            captured_profiles = body
+                    except Exception as pe:
+                        logger.warning(f"Profiles fetch error: {pe}")
+
+                if captured_profiles and 'profiles' in captured_profiles:
+                    account_info['profiles'] = [
+                        {'name': pr.get('firstName', 'Unknown'), 'isKids': pr.get('isKids', False), 'guid': pr.get('guid', '')}
+                        for pr in captured_profiles['profiles']
+                    ]
+
+                logger.info(f"Extracted account_info keys: {list(account_info.keys())}")
 
             except Exception as nav_err:
                 logger.warning(f"Navigation error: {nav_err}")
             finally:
                 await browser.close()
 
-            if account_info:
-                return True, account_info, None
-            else:
-                return False, None, "Could not extract account information. Cookies may be expired or invalid."
+        # Clean up None values
+        account_info = {k: v for k, v in account_info.items() if v is not None}
+
+        if account_info:
+            return True, account_info, None
+        else:
+            return False, None, "Could not extract account information. Cookies may be expired or invalid."
 
     except ImportError:
         return False, None, "Playwright is not installed on this server."
