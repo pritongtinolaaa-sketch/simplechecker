@@ -295,8 +295,7 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
         return False, None, str(e)
 
 async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict], Optional[str]]:
-    """Extract Netflix account information from cookies"""
-    # Normalize cookie names
+    """Extract Netflix account information using Playwright to bypass 421 IP blocks."""
     norm = {}
     for k, v in cookies.items():
         norm[k] = v
@@ -308,152 +307,165 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
     if not netflix_id or not secure_id:
         return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
 
-    cookie_str = _build_cookie_header(cookies)
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Content-Type': 'application/json',
-        'Origin': 'https://www.netflix.com',
-        'Referer': 'https://www.netflix.com/',
-        'Cookie': cookie_str
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, http2=False) as http_client:
-            shakti_builds = await _discover_shakti_build(http_client, headers)
-            resp = None
-            for build in shakti_builds:
-                candidate = await http_client.get(
-                    f'https://www.netflix.com/api/shakti/{build}/pathEvaluator?withSize=true&materialize=true&model=harris',
-                    headers=headers,
-                    params={
-                        'path': json.dumps([
-                            ['accountInfo', ['email', 'countryOfSignup', 'membershipStatus', 'createdDate']],
-                            ['currentAccount', ['planName', 'planType', 'maxStreamingQuality', 'maxUserLimit']],
-                            ['paymentData', ['lastPaymentDate', 'nextPaymentDate', 'billingMethod', 'paymentMethods']]
-                        ])
-                    }
-                )
-                if candidate.status_code == 200:
-                    resp = candidate
-                    break
-                if candidate.status_code == 421:
-                    logger.warning(f"Shakti request returned 421 for build {build}, retrying fallback build...")
-                    continue
+        from playwright.async_api import async_playwright
 
-                resp = candidate
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            )
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
 
-            if resp is None:
-                return False, None, "Netflix blocked this request (HTTP 421). Netflix restricts API access from cloud/datacenter IPs. Try again or use valid cookies from a residential network."
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                account_info = {}
-                
-                # Extract account information from the response
-                try:
-                    if 'jsonGraph' in data:
-                        json_graph = data['jsonGraph']
-                        
-                        # Extract email and account details
-                        if 'accountInfo' in json_graph:
-                            acc_info = json_graph['accountInfo']
-                            if 'email' in acc_info and 'value' in acc_info['email']:
-                                account_info['email'] = acc_info['email']['value']
-                            if 'countryOfSignup' in acc_info and 'value' in acc_info['countryOfSignup']:
-                                account_info['country'] = acc_info['countryOfSignup']['value']
-                            if 'membershipStatus' in acc_info and 'value' in acc_info['membershipStatus']:
-                                account_info['subscription_status'] = acc_info['membershipStatus']['value']
-                            if 'createdDate' in acc_info and 'value' in acc_info['createdDate']:
-                                # Format date if it's a timestamp
-                                created = acc_info['createdDate']['value']
+            cookie_list = [
+                {"name": k, "value": v, "domain": ".netflix.com", "path": "/", "secure": True, "sameSite": "None"}
+                for k, v in cookies.items()
+            ]
+            await context.add_cookies(cookie_list)
+            page = await context.new_page()
+
+            account_info = {}
+
+            try:
+                # Navigate to browse to establish session
+                await page.goto("https://www.netflix.com/browse", timeout=30000)
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                await asyncio.sleep(2)
+
+                # Extract embedded Netflix context data (falcorCache / reactContext)
+                react_ctx = await page.evaluate("""() => {
+                    try {
+                        return window.netflix && window.netflix.reactContext
+                            ? JSON.stringify(window.netflix.reactContext)
+                            : null;
+                    } catch(e) { return null; }
+                }""")
+
+                if react_ctx:
+                    try:
+                        ctx_data = json.loads(react_ctx)
+                        models = ctx_data.get('models', {})
+
+                        user_info = models.get('userInfo', {}).get('data', {})
+                        if user_info.get('userGuid'):
+                            account_info['subscription_status'] = 'CURRENT_MEMBER' if user_info.get('isAdultVerified') is not None else None
+
+                        member_info = models.get('memberContext', {}).get('data', {})
+                        if member_info:
+                            account_info['email'] = member_info.get('userInfo', {}).get('email') or account_info.get('email')
+                            account_info['country'] = member_info.get('countryOfSignup') or account_info.get('country')
+
+                        # Try falcorCache for richer data
+                        falcor = ctx_data.get('falcorCache', {})
+                        if falcor:
+                            acc = falcor.get('accountInfo', {})
+                            if acc.get('email', {}).get('value'):
+                                account_info['email'] = acc['email']['value']
+                            if acc.get('countryOfSignup', {}).get('value'):
+                                account_info['country'] = acc['countryOfSignup']['value']
+                            if acc.get('membershipStatus', {}).get('value'):
+                                account_info['subscription_status'] = acc['membershipStatus']['value']
+                            if acc.get('createdDate', {}).get('value'):
+                                created = acc['createdDate']['value']
                                 if isinstance(created, (int, float)):
-                                    from datetime import datetime
-                                    created = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
-                                account_info['account_created_date'] = str(created)
-                        
-                        # Extract plan and streaming quality info
-                        if 'currentAccount' in json_graph:
-                            curr_acc = json_graph['currentAccount']
-                            if 'planName' in curr_acc and 'value' in curr_acc['planName']:
-                                account_info['plan'] = curr_acc['planName']['value']
-                            elif 'planType' in curr_acc and 'value' in curr_acc['planType']:
-                                account_info['plan'] = curr_acc['planType']['value']
-                            if 'maxStreamingQuality' in curr_acc and 'value' in curr_acc['maxStreamingQuality']:
-                                account_info['streaming_quality'] = curr_acc['maxStreamingQuality']['value']
-                        
-                        # Extract payment info
-                        if 'paymentData' in json_graph:
-                            payment = json_graph['paymentData']
-                            if 'nextPaymentDate' in payment and 'value' in payment['nextPaymentDate']:
-                                next_payment = payment['nextPaymentDate']['value']
-                                if isinstance(next_payment, (int, float)):
-                                    from datetime import datetime
-                                    next_payment = datetime.utcfromtimestamp(next_payment / 1000).strftime('%Y-%m-%d')
-                                account_info['billing_date'] = str(next_payment)
-                            if 'paymentMethods' in payment and 'value' in payment['paymentMethods']:
-                                methods = payment['paymentMethods']['value']
-                                if isinstance(methods, list) and len(methods) > 0:
-                                    method = methods[0]
-                                    if isinstance(method, dict):
-                                        method_type = method.get('type', 'Unknown')
-                                        last4 = method.get('last4', '')
-                                        if last4:
-                                            account_info['payment_method'] = f"{method_type} ****{last4}"
-                                        else:
-                                            account_info['payment_method'] = method_type
-                    
-                    # Try alternate API endpoint if first one didn't work
-                    if not account_info:
-                        resp2 = await http_client.get(
-                            'https://www.netflix.com/AccountSettings',
-                            headers=headers
-                        )
-                        
-                        if resp2.status_code == 200:
-                            # Try to parse from HTML/JSON if available
-                            # This is a fallback - the API endpoint should work better
+                                    account_info['account_created_date'] = datetime.utcfromtimestamp(created / 1000).strftime('%Y-%m-%d')
+                                else:
+                                    account_info['account_created_date'] = str(created)
+
+                            curr = falcor.get('currentAccount', {})
+                            if curr.get('planName', {}).get('value'):
+                                account_info['plan'] = curr['planName']['value']
+                            elif curr.get('planType', {}).get('value'):
+                                account_info['plan'] = curr['planType']['value']
+                            if curr.get('maxStreamingQuality', {}).get('value'):
+                                account_info['streaming_quality'] = curr['maxStreamingQuality']['value']
+
+                            pay = falcor.get('paymentData', {})
+                            if pay.get('nextPaymentDate', {}).get('value'):
+                                np_val = pay['nextPaymentDate']['value']
+                                if isinstance(np_val, (int, float)):
+                                    np_val = datetime.utcfromtimestamp(np_val / 1000).strftime('%Y-%m-%d')
+                                account_info['billing_date'] = str(np_val)
+                    except Exception as parse_err:
+                        logger.warning(f"reactContext parse error: {parse_err}")
+
+                # Navigate to account page to extract email / plan if not yet found
+                if not account_info.get('email') or not account_info.get('plan'):
+                    await page.goto("https://www.netflix.com/account", timeout=30000)
+                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await asyncio.sleep(2)
+
+                    # Try extracting from embedded JSON on account page
+                    acct_ctx = await page.evaluate("""() => {
+                        try {
+                            return window.netflix && window.netflix.reactContext
+                                ? JSON.stringify(window.netflix.reactContext)
+                                : null;
+                        } catch(e) { return null; }
+                    }""")
+
+                    if acct_ctx:
+                        try:
+                            acct_data = json.loads(acct_ctx)
+                            falcor2 = acct_data.get('falcorCache', {})
+                            if falcor2:
+                                acc2 = falcor2.get('accountInfo', {})
+                                if not account_info.get('email') and acc2.get('email', {}).get('value'):
+                                    account_info['email'] = acc2['email']['value']
+                                if not account_info.get('country') and acc2.get('countryOfSignup', {}).get('value'):
+                                    account_info['country'] = acc2['countryOfSignup']['value']
+                                if not account_info.get('subscription_status') and acc2.get('membershipStatus', {}).get('value'):
+                                    account_info['subscription_status'] = acc2['membershipStatus']['value']
+                                curr2 = falcor2.get('currentAccount', {})
+                                if not account_info.get('plan') and curr2.get('planName', {}).get('value'):
+                                    account_info['plan'] = curr2['planName']['value']
+                                if not account_info.get('streaming_quality') and curr2.get('maxStreamingQuality', {}).get('value'):
+                                    account_info['streaming_quality'] = curr2['maxStreamingQuality']['value']
+                        except Exception:
                             pass
-                    
-                    # Get profile information (try discovered build first, then fallback build ids)
-                    resp_profiles = None
-                    for build in shakti_builds:
-                        profile_candidate = await http_client.get(
-                            f'https://www.netflix.com/api/shakti/{build}/profiles',
-                            headers=headers
-                        )
-                        if profile_candidate.status_code == 200:
-                            resp_profiles = profile_candidate
-                            break
-                        if profile_candidate.status_code == 421:
-                            logger.warning(f"Profiles request returned 421 for build {build}, retrying...")
-                            continue
-                    
-                    if resp_profiles is not None and resp_profiles.status_code == 200:
-                        profiles_data = resp_profiles.json()
+
+                    # DOM fallback for email
+                    if not account_info.get('email'):
+                        try:
+                            email_el = await page.query_selector('[data-uia="account-email"]')
+                            if email_el:
+                                account_info['email'] = (await email_el.inner_text()).strip()
+                        except Exception:
+                            pass
+
+                # Get profiles
+                try:
+                    await page.goto("https://www.netflix.com/api/shakti/mre/profiles", timeout=20000)
+                    profiles_text = await page.content()
+                    # Strip HTML tags to get JSON body
+                    import re as _re
+                    json_match = _re.search(r'\{.*\}', profiles_text, _re.DOTALL)
+                    if json_match:
+                        profiles_data = json.loads(json_match.group())
                         if 'profiles' in profiles_data:
                             account_info['profiles'] = [
-                                {
-                                    'name': p.get('firstName', 'Unknown'),
-                                    'isKids': p.get('isKids', False),
-                                    'guid': p.get('guid', '')
-                                }
-                                for p in profiles_data['profiles']
+                                {'name': pr.get('firstName', 'Unknown'), 'isKids': pr.get('isKids', False), 'guid': pr.get('guid', '')}
+                                for pr in profiles_data['profiles']
                             ]
-                    
-                    if account_info:
-                        return True, account_info, None
-                    else:
-                        return False, None, "Could not extract account information from response"
-                        
-                except Exception as parse_error:
-                    return False, None, f"Error parsing account data: {str(parse_error)}"
+                except Exception as pe:
+                    logger.warning(f"Profiles fetch error: {pe}")
+
+            except Exception as nav_err:
+                logger.warning(f"Navigation error: {nav_err}")
+            finally:
+                await browser.close()
+
+            if account_info:
+                return True, account_info, None
             else:
-                return False, None, f"HTTP {resp.status_code}: {resp.text[:200]}"
+                return False, None, "Could not extract account information. Cookies may be expired or invalid."
+
+    except ImportError:
+        return False, None, "Playwright is not installed on this server."
     except Exception as e:
-        return False, None, f"Request error: {str(e)}"
+        return False, None, f"Playwright error: {str(e)}"
 
 async def get_browser_cookies_with_playwright(cookies_dict: dict) -> tuple[dict, Optional[str]]:
     """Use Playwright to get full cookie header from Netflix.com"""
