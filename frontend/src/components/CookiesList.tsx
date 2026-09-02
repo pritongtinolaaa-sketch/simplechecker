@@ -64,11 +64,6 @@ const CookiesList: React.FC<CookiesListProps> = ({
     const token = tokenByBundle.get(bundle.bundle_number)
     return Boolean(account?.success || token?.success)
   })
-  const liveCookieCount = liveBundles.reduce(
-    (count, bundle) => count + bundle.cookies.filter(cookie => cookie.name && cookie.value).length,
-    0
-  )
-
   const cookieNameSummary = (bundle: CookieBundle) => {
     const counts = bundle.cookies
       .filter(cookie => cookie.name && cookie.value)
@@ -167,7 +162,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
   return (
     <div className="cookies-list">
       <div className="cookies-header">
-        <h3>✅ Checked Live Cookies ({liveCookieCount.toLocaleString()})</h3>
+        <h3>✅ Checked Live Cookie Bundles ({liveBundles.length.toLocaleString()})</h3>
         <button
           className="btn btn-secondary btn-small"
           onClick={handleDownloadLiveCookies}
