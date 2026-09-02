@@ -107,20 +107,19 @@ const CookiesList: React.FC<CookiesListProps> = ({
                 <div className="cookie-main">
                   <div className="cookie-name">
                     <strong>Live Cookie Bundle #{bundle.bundle_number}</strong>
-                    <span className="cookie-expand-hint">Click to view full bundle</span>
-                  </div>
-                  <div className="cookie-value">
-                    <code>{cookieHeader.substring(0, 180)}{cookieHeader.length > 180 ? '...' : ''}</code>
-                  </div>
-                  <div className="cookie-domain">
-                    Records included: <code>{bundleCookies.length.toLocaleString()}</code>
-                  </div>
-                  <div className="cookie-domain">
-                    Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
+                    <span className="cookie-summary-meta">
+                      {bundleCookies.length.toLocaleString()} records
+                    </span>
                   </div>
                 </div>
               </summary>
               <div className="cookie-expanded">
+                <div className="cookie-domain">
+                  Records included: <code>{bundleCookies.length.toLocaleString()}</code>
+                </div>
+                <div className="cookie-domain">
+                  Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
+                </div>
                 <div className="cookie-expanded-label">Full cookie bundle</div>
                 <pre className="cookie-full-value">{cookieHeader}</pre>
               </div>

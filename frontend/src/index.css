@@ -1149,7 +1149,7 @@ body {
   background: rgba(0, 233, 255, 0.06);
 }
 
-.cookie-expand-hint {
+.cookie-summary-meta {
   margin-left: 0.65rem;
   color: var(--primary-color);
   font-family: 'Share Tech Mono', 'Courier New', monospace;
@@ -1161,6 +1161,10 @@ body {
 .cookie-expanded {
   padding: 0 0.85rem 0.85rem;
   border-top: 1px solid var(--border-color);
+}
+
+.cookie-expanded .cookie-domain {
+  margin-top: 0.65rem;
 }
 
 .cookie-expanded-label {
