@@ -11,6 +11,7 @@ import os
 import re
 from dotenv import load_dotenv
 from urllib.parse import unquote
+from uuid import uuid4
 
 load_dotenv()
 
@@ -87,7 +88,24 @@ class NetflixAccountInfo(BaseModel):
     bundle_count: int = 0
     checked_cookie_count: int = 0
 
-LARGE_IMPORT_ACCOUNT_LOOKUP_THRESHOLD = 20
+class BundleCheckStartResponse(BaseModel):
+    job_id: str
+    status: str
+    total_bundles: int
+    total_cookies: int
+
+class BundleCheckStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    success: bool = False
+    error: Optional[str] = None
+    total_bundles: int = 0
+    completed_bundles: int = 0
+    total_cookies: int = 0
+    completed_cookies: int = 0
+    accounts: List[dict] = []
+    tokens: List[dict] = []
+    cookie_bundles: List[dict] = []
 
 # Cookie Parsing Functions
 COMPACT_NETFLIX_COOKIE_NAMES = (
@@ -356,6 +374,8 @@ def parse_cookie_bundles(
 # Netflix Token Generation Functions
 
 logger = logging.getLogger(__name__)
+CHECK_BATCH_SIZE = 4
+CHECK_JOBS: dict[str, dict] = {}
 
 def _build_cookie_header(cookies: dict) -> str:
     return '; '.join([f"{k}={v}" for k, v in cookies.items()])
@@ -1117,32 +1137,6 @@ async def get_account_info(
                 error="No cookie bundles parsed from input"
             )
 
-        if len(bundles) > LARGE_IMPORT_ACCOUNT_LOOKUP_THRESHOLD:
-            total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
-            account_results = [
-                {
-                    "bundle_number": index,
-                    "cookie_count": len(bundle_cookies),
-                    "success": False,
-                    "error": (
-                        "Account details skipped for this large import; "
-                        "live status is determined by token validation."
-                    ),
-                }
-                for index, (bundle_cookies, _) in enumerate(bundles, 1)
-            ]
-            return NetflixAccountInfo(
-                success=False,
-                error=(
-                    "Account details were skipped for this large import. "
-                    "Live status is determined by token validation."
-                ),
-                accounts=account_results,
-                account_count=len(account_results),
-                bundle_count=len(bundles),
-                checked_cookie_count=total_cookies,
-            )
-
         lookup_semaphore = asyncio.Semaphore(4)
 
         async def lookup_bundle(bundle_number: int, bundle_cookies: List[Cookie]) -> dict:
@@ -1223,6 +1217,190 @@ async def get_account_info(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error extracting account info: {str(e)}")
+
+
+def _serialize_cookie_bundles(
+    bundles: List[tuple[List[Cookie], List[str]]],
+) -> List[dict]:
+    return [
+        {
+            "bundle_number": index,
+            "cookies": [cookie.model_dump() for cookie in bundle_cookies],
+        }
+        for index, (bundle_cookies, _) in enumerate(bundles, 1)
+    ]
+
+
+async def _check_single_bundle(
+    bundle_number: int,
+    bundle_cookies: List[Cookie],
+) -> tuple[dict, dict]:
+    account_result = {
+        "bundle_number": bundle_number,
+        "cookie_count": len(bundle_cookies),
+        "success": False,
+    }
+    token_result = {
+        "bundle_number": bundle_number,
+        "cookie_count": len(bundle_cookies),
+        "success": False,
+    }
+    cookies_dict = {cookie.name: cookie.value for cookie in bundle_cookies}
+
+    if not any(name.lower() == "netflixid" for name in cookies_dict):
+        error = "Missing required cookie (NetflixId)"
+        account_result["error"] = error
+        token_result["error"] = error
+        return account_result, token_result
+
+    account_task = asyncio.wait_for(
+        get_netflix_account_info(cookies_dict),
+        timeout=60,
+    )
+    token_task = generate_nftoken(cookies_dict)
+    account_response, token_response = await asyncio.gather(
+        account_task,
+        token_task,
+        return_exceptions=True,
+    )
+
+    if isinstance(account_response, BaseException):
+        account_result["error"] = (
+            "Account lookup timed out"
+            if isinstance(account_response, asyncio.TimeoutError)
+            else f"Account lookup failed: {account_response}"
+        )
+    else:
+        account_success, account_info, account_error = account_response
+        account_result["success"] = account_success and bool(account_info)
+        if account_info:
+            account_result.update({
+                "email": account_info.get("email"),
+                "country": account_info.get("country"),
+                "plan": account_info.get("plan"),
+                "subscription_status": account_info.get("subscription_status"),
+                "billing_date": account_info.get("billing_date"),
+                "account_created_date": account_info.get("account_created_date"),
+                "payment_method": account_info.get("payment_method"),
+                "streaming_quality": account_info.get("streaming_quality"),
+                "profiles": account_info.get("profiles"),
+            })
+        if account_error:
+            account_result["error"] = account_error
+
+    if isinstance(token_response, BaseException):
+        token_result["error"] = f"Token generation failed: {token_response}"
+    else:
+        token_success, token, token_error = token_response
+        token_result["success"] = token_success and bool(token)
+        if token:
+            token_result["nftoken"] = token
+        if token_error:
+            token_result["error"] = token_error
+
+    return account_result, token_result
+
+
+async def _run_bundle_check(job_id: str, bundles: List[tuple[List[Cookie], List[str]]]):
+    job = CHECK_JOBS[job_id]
+    job["status"] = "running"
+
+    async def run_with_progress(index: int, bundle: tuple[List[Cookie], List[str]]):
+        bundle_cookies, _ = bundle
+        account_result, token_result = await _check_single_bundle(index, bundle_cookies)
+        return index, len(bundle_cookies), account_result, token_result
+
+    try:
+        for batch_start in range(0, len(bundles), CHECK_BATCH_SIZE):
+            batch = bundles[batch_start:batch_start + CHECK_BATCH_SIZE]
+            tasks = [
+                run_with_progress(batch_start + offset + 1, bundle)
+                for offset, bundle in enumerate(batch)
+            ]
+
+            for completed_task in asyncio.as_completed(tasks):
+                index, cookie_count, account_result, token_result = await completed_task
+                job["accounts"].append(account_result)
+                job["tokens"].append(token_result)
+                job["accounts"].sort(key=lambda result: result["bundle_number"])
+                job["tokens"].sort(key=lambda result: result["bundle_number"])
+                job["completed_bundles"] += 1
+                job["completed_cookies"] += cookie_count
+
+        job["success"] = any(
+            result.get("success")
+            for result in job["accounts"] + job["tokens"]
+        )
+        job["status"] = "completed"
+    except Exception as error:
+        logger.exception("Bundle check job %s failed", job_id)
+        job["status"] = "failed"
+        job["error"] = f"Bundle check failed: {error}"
+
+
+@app.post("/api/check-bundles/start", response_model=BundleCheckStartResponse)
+async def start_bundle_check(request: CookieCheckRequest):
+    """Start a batched cookie check and return a job id for progress polling."""
+    if not request.cookies_text or not request.cookies_text.strip():
+        raise HTTPException(status_code=400, detail="cookies_text cannot be empty")
+
+    format_type = request.format_type.lower()
+    try:
+        if format_type == "netscape":
+            cookies, parse_errors = parse_netscape_cookies(request.cookies_text)
+        elif format_type == "json":
+            cookies, parse_errors = parse_json_cookies(request.cookies_text)
+        elif format_type == "auto":
+            cookies, parse_errors = parse_cookies_auto(request.cookies_text)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid format_type. Must be 'netscape', 'json', or 'auto'",
+            )
+
+        if not cookies:
+            raise HTTPException(status_code=400, detail="No cookies parsed from input")
+
+        bundles, bundle_errors = parse_cookie_bundles(request.cookies_text, format_type)
+        if not bundles:
+            raise HTTPException(status_code=400, detail="No cookie bundles parsed from input")
+
+        job_id = uuid4().hex
+        total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
+        CHECK_JOBS[job_id] = {
+            "job_id": job_id,
+            "status": "queued",
+            "success": False,
+            "error": "; ".join(parse_errors + bundle_errors) or None,
+            "total_bundles": len(bundles),
+            "completed_bundles": 0,
+            "total_cookies": total_cookies,
+            "completed_cookies": 0,
+            "accounts": [],
+            "tokens": [],
+            "cookie_bundles": _serialize_cookie_bundles(bundles),
+        }
+        asyncio.create_task(_run_bundle_check(job_id, bundles))
+
+        return BundleCheckStartResponse(
+            job_id=job_id,
+            status="queued",
+            total_bundles=len(bundles),
+            total_cookies=total_cookies,
+        )
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Error starting bundle check: {error}")
+
+
+@app.get("/api/check-bundles/{job_id}", response_model=BundleCheckStatusResponse)
+async def get_bundle_check_status(job_id: str):
+    job = CHECK_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bundle check job not found")
+    return BundleCheckStatusResponse(**job)
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -6,6 +6,14 @@ import CookiesList from './components/CookiesList'
 import Header from './components/Header'
 import AccountInfo from './components/AccountInfo'
 
+interface CheckProgress {
+  status: string
+  totalBundles: number
+  completedBundles: number
+  totalCookies: number
+  completedCookies: number
+}
+
 function App() {
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
@@ -13,6 +21,13 @@ function App() {
   const [tokenResults, setTokenResults] = useState<any[]>([])
   const [accountInfo, setAccountInfo] = useState<any>(null)
   const [accountInfoError, setAccountInfoError] = useState('')
+  const [progress, setProgress] = useState<CheckProgress>({
+    status: '',
+    totalBundles: 0,
+    completedBundles: 0,
+    totalCookies: 0,
+    completedCookies: 0
+  })
 
   const handleGetNetflixInfo = async (cookiesText: string, formatType: string) => {
     setLoading(true)
@@ -21,57 +36,72 @@ function App() {
     setTokenResults([])
     setCookieBundles([])
     setCookies([])
+    setProgress({
+      status: 'starting',
+      totalBundles: 0,
+      completedBundles: 0,
+      totalCookies: 0,
+      completedCookies: 0
+    })
     
     try {
-      // Fetch both account info and Netflix token in parallel
-      // Always use playwright for getting Netflix token
-      const [accountResponse, tokenResponse] = await Promise.all([
-        axios.post('/api/get-account-info', {
-          cookies_text: cookiesText,
-          format_type: formatType
-        }),
-        axios.post('/api/generate-netflix-token', {
+      const startResponse = await axios.post('/api/check-bundles/start', {
           cookies_text: cookiesText,
           format_type: formatType,
-          use_playwright: true
+      })
+      const { job_id: jobId, total_bundles: totalBundles, total_cookies: totalCookies } = startResponse.data
+      setProgress({
+        status: 'queued',
+        totalBundles,
+        completedBundles: 0,
+        totalCookies,
+        completedCookies: 0
+      })
+
+      const applyCheckStatus = (data: any) => {
+        const bundles = Array.isArray(data.cookie_bundles) ? data.cookie_bundles : []
+        const accounts = Array.isArray(data.accounts) ? data.accounts : []
+        const tokens = Array.isArray(data.tokens) ? data.tokens : []
+
+        setProgress({
+          status: data.status,
+          totalBundles: data.total_bundles || totalBundles,
+          completedBundles: data.completed_bundles || 0,
+          totalCookies: data.total_cookies || totalCookies,
+          completedCookies: data.completed_cookies || 0
         })
-      ])
-      
-      // Handle account info response
-      if (accountResponse.data.accounts?.length) {
-        setAccountInfo(accountResponse.data)
-        if (!accountResponse.data.success) {
-          setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
+        setAccountInfo({
+          success: data.success,
+          accounts,
+          account_count: data.total_bundles || totalBundles,
+          bundle_count: data.total_bundles || totalBundles,
+          checked_cookie_count: data.total_cookies || totalCookies
+        })
+        setTokenResults(tokens)
+        setCookieBundles(bundles)
+        setCookies(bundles.flatMap((bundle: any) => bundle.cookies || []))
+        if (data.status === 'failed') {
+          setAccountInfoError(data.error || 'Failed to process cookie bundles')
+        } else {
+          setAccountInfoError('')
         }
-      } else if (accountResponse.data.success) {
-        setAccountInfo(accountResponse.data)
-      } else {
-        setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
       }
-      
-      // Handle token response and extract cookies
-      if (tokenResponse.data.tokens?.length) {
-        setTokenResults(tokenResponse.data.tokens)
-      } else if (tokenResponse.data.success && tokenResponse.data.nftoken) {
-        setTokenResults([{
-          bundle_number: 1,
-          success: true,
-          nftoken: tokenResponse.data.nftoken
-        }])
-      } else {
-        setAccountInfoError(tokenResponse.data.error || 'Failed to generate Netflix token')
-      }
-      
-      // Store parsed cookies
-      if (tokenResponse.data.cookies && Array.isArray(tokenResponse.data.cookies)) {
-        setCookies(tokenResponse.data.cookies)
-      }
-      if (tokenResponse.data.cookie_bundles && Array.isArray(tokenResponse.data.cookie_bundles)) {
-        setCookieBundles(tokenResponse.data.cookie_bundles)
+
+      let statusData
+      do {
+        await new Promise(resolve => setTimeout(resolve, 700))
+        const statusResponse = await axios.get(`/api/check-bundles/${jobId}`)
+        statusData = statusResponse.data
+        applyCheckStatus(statusData)
+      } while (statusData.status !== 'completed' && statusData.status !== 'failed')
+
+      if (statusData.status === 'failed') {
+        setAccountInfoError(statusData.error || 'Failed to process cookie bundles')
       }
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to process request'
       setAccountInfoError(errorMessage)
+      setProgress(prev => ({ ...prev, status: 'failed' }))
     } finally {
       setLoading(false)
     }
@@ -88,6 +118,7 @@ function App() {
             <CookieForm
               onSubmit={handleGetNetflixInfo}
               loading={loading}
+              progress={progress}
             />
           </div>
 
