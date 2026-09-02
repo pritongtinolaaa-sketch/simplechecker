@@ -131,8 +131,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   const downloadBundle = (bundle: CookieBundle) => {
     const account = accountByBundle.get(bundle.bundle_number) ||
       (bundle.bundle_number === 1 ? fallbackAccount : undefined)
-    const token = tokenByBundle.get(bundle.bundle_number)
-    const content = buildCookieDownloadContent(bundle, account, token)
+    const content = buildCookieDownloadContent(bundle, account)
     downloadTextFile(content, `netflix-live-cookie-${bundle.bundle_number}.txt`)
   }
 
@@ -143,8 +142,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       .map((bundle) => {
         const account = accountByBundle.get(bundle.bundle_number) ||
           (bundle.bundle_number === 1 ? fallbackAccount : undefined)
-        const token = tokenByBundle.get(bundle.bundle_number)
-        return buildCookieDownloadContent(bundle, account, token)
+        return buildCookieDownloadContent(bundle, account)
       })
       .join('\n')
 
