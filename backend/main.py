@@ -11,6 +11,7 @@ import secrets
 import os
 import re
 from dotenv import load_dotenv
+from urllib.parse import unquote
 
 load_dotenv()
 
@@ -229,73 +230,81 @@ async def _discover_shakti_build(http_client: httpx.AsyncClient, headers: dict) 
     return candidates
 
 async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional[str]]:
-    """Generate Netflix auto-login token from cookies"""
+    """Generate an NFTOKEN using the same account endpoint as the checker."""
     norm = {}
     for k, v in cookies.items():
         norm[k] = v
         norm[k.lower()] = v
 
     netflix_id = norm.get('NetflixId') or norm.get('netflixid')
-    secure_id = norm.get('SecureNetflixId') or norm.get('securenetflixid')
 
-    if not netflix_id or not secure_id:
-        return False, None, "Missing required cookies (NetflixId, SecureNetflixId)"
+    if not netflix_id:
+        return False, None, "Missing required cookie (NetflixId)"
 
-    cookie_str = _build_cookie_header(cookies)
-
-    payload = {
-        "operationName": "CreateAutoLoginToken",
-        "variables": {"scope": "WEBVIEW_MOBILE_STREAMING"},
-        "extensions": {
-            "persistedQuery": {
-                "version": 102,
-                "id": "76e97129-f4b5-41a0-a73c-12e674896849"
-            }
-        }
+    api_url = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
+    query_params = {
+        "appVersion": "15.48.1",
+        "config": '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"false","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"true","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","sharksEnabled":"true"}',
+        "device_type": "NFAPPL-02-",
+        "esn": "NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+        "idiom": "phone",
+        "iosVersion": "15.8.5",
+        "isTablet": "false",
+        "languages": "en-US",
+        "locale": "en-US",
+        "maxDeviceWidth": "375",
+        "model": "saget",
+        "modelType": "IPHONE8-1",
+        "odpAware": "true",
+        "path": '["account","token","default"]',
+        "pathFormat": "graph",
+        "pixelDensity": "2.0",
+        "progressive": "false",
+        "responseFormat": "json",
     }
 
     nft_headers = {
-        'User-Agent': 'com.netflix.mediaclient/63884 (Linux; U; Android 13; ro; M2007J3SG; Build/TQ1A.230205.001.A2; Cronet/143.0.7445.0)',
-        'Accept': 'multipart/mixed;deferSpec=20220824, application/graphql-response+json, application/json',
-        'Content-Type': 'application/json',
-        'Origin': 'https://www.netflix.com',
-        'Referer': 'https://www.netflix.com/',
-        'Cookie': cookie_str
+        "User-Agent": "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
+        "x-netflix.request.attempt": "1",
+        "x-netflix.request.routing": '{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',
+        "x-netflix.context.app-version": "15.48.1",
+        "x-netflix.argo.translated": "true",
+        "x-netflix.context.form-factor": "phone",
+        "x-netflix.context.sdk-version": "2012.4",
+        "x-netflix.client.appversion": "15.48.1",
+        "x-netflix.context.max-device-width": "375",
+        "x-netflix.client.type": "argo",
+        "x-netflix.context.locales": "en-US",
+        "x-netflix.client.iosversion": "15.8.5",
+        "x-netflix.context.os-version": "15.8.5",
+        "x-netflix.context.ui-flavor": "argo",
+        "x-netflix.context.pixel-density": "2.0",
+        "accept-language": "en-US;q=1",
+        "Cookie": f"NetflixId={unquote(str(netflix_id))}",
     }
-
-    graphql_endpoints = [
-        'https://android13.prod.ftl.netflix.com/graphql',
-        'https://ios.prod.ftl.netflix.com/graphql',
-        'https://www.netflix.com/graphql'
-    ]
 
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, http2=False) as http_client:
-            last_error: Optional[str] = None
-            for endpoint in graphql_endpoints:
-                resp = await http_client.post(
-                    endpoint,
-                    headers=nft_headers,
-                    json=payload
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if 'data' in data and data['data'] and 'createAutoLoginToken' in data['data']:
-                        token = data['data']['createAutoLoginToken']
-                        return True, token, None
-                    if 'errors' in data:
-                        last_error = f"API Error: {json.dumps(data.get('errors', []))}"
-                        continue
-                    last_error = "Unexpected response"
-                    continue
+            resp = await http_client.get(
+                api_url,
+                params=query_params,
+                headers=nft_headers,
+            )
 
-                if resp.status_code == 421:
-                    last_error = f"HTTP 421 from {endpoint}"
-                    continue
+            if resp.status_code != 200:
+                return False, None, f"HTTP {resp.status_code} from Netflix token endpoint"
 
-                last_error = f"HTTP {resp.status_code} from {endpoint}"
+            data = resp.json()
+            token_data = (
+                (((data.get("value") or {}).get("account") or {}).get("token") or {}).get("default")
+                or {}
+            )
+            token = token_data.get("token") if isinstance(token_data, dict) else None
 
-            return False, None, last_error or "Failed to generate token"
+            if not isinstance(token, str) or not token.strip():
+                return False, None, "Netflix returned no usable token"
+
+            return True, token, None
     except Exception as e:
         return False, None, str(e)
 
