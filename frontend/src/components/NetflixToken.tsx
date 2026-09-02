@@ -6,7 +6,7 @@ interface NetflixTokenProps {
 }
 
 const NetflixToken: React.FC<NetflixTokenProps> = ({ token, error }) => {
-  const tokenUrl = `https://www.netflix.com/?nftoken=${encodeURIComponent(token)}`
+  const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(token)}`
   const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(token)}`
 
   const handleCopyLink = () => {
