@@ -24,7 +24,10 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
 # Master Key Configuration
-MASTER_KEY = "PritongTinola*3030"
+# Keep the master key in Replit Secrets rather than in source control.
+MASTER_KEY = os.getenv("SESSION_SECRET")
+if not MASTER_KEY:
+    raise RuntimeError("SESSION_SECRET is not configured")
 
 # In-memory key storage (in production, use a database)
 # Maps key -> user_name
