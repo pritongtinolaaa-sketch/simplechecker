@@ -372,9 +372,19 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
             account_info = {}
 
             try:
-                await page.goto("https://www.netflix.com/browse", timeout=35000)
-                await page.wait_for_load_state("networkidle", timeout=20000)
-                await asyncio.sleep(2)
+                await page.goto(
+                    "https://www.netflix.com/browse",
+                    wait_until="domcontentloaded",
+                    timeout=20000,
+                )
+                try:
+                    await page.wait_for_function(
+                        "() => Boolean(window.netflix?.reactContext?.models)",
+                        timeout=8000,
+                    )
+                except Exception:
+                    logger.debug("Netflix browse models were not ready before timeout")
+                await asyncio.sleep(0.5)
 
                 current_url = page.url
                 print(f"[DEBUG] URL after browse: {current_url}", flush=True)
@@ -519,9 +529,19 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                         pass
                 page.on('response', handle_ya_response)
 
-                await page.goto("https://www.netflix.com/YourAccount", timeout=30000)
-                await page.wait_for_load_state("networkidle", timeout=15000)
-                await asyncio.sleep(2)
+                await page.goto(
+                    "https://www.netflix.com/YourAccount",
+                    wait_until="domcontentloaded",
+                    timeout=20000,
+                )
+                try:
+                    await page.wait_for_function(
+                        "() => Boolean(window.netflix?.reactContext?.models?.deviceManagementModel || window.netflix?.reactContext?.models?.accountInfo)",
+                        timeout=8000,
+                    )
+                except Exception:
+                    logger.debug("Netflix account models were not ready before timeout")
+                await asyncio.sleep(0.5)
 
                 # Dump ALL model keys and selected model data from YourAccount reactContext
                 ya_ctx = await page.evaluate("""() => {
@@ -615,9 +635,16 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                 # Profiles via authenticated browser fetch
                 if not captured_profiles:
                     try:
-                        resp = await page.goto("https://www.netflix.com/api/shakti/mre/profiles", timeout=15000)
-                        if resp and resp.status == 200:
-                            captured_profiles = await resp.json()
+                        captured_profiles = await page.evaluate("""async () => {
+                            try {
+                                const resp = await fetch('/api/shakti/mre/profiles', {
+                                    credentials: 'include'
+                                });
+                                return resp.ok ? await resp.json() : null;
+                            } catch (e) {
+                                return null;
+                            }
+                        }""")
                     except Exception as pe:
                         print(f"[DEBUG] Profiles error: {pe}", flush=True)
 

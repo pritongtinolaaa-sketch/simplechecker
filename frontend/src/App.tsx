@@ -75,8 +75,9 @@ function App() {
     setCookies([])
     
     try {
-      // Fetch both account info and Netflix token in parallel
-      // Always use playwright for getting Netflix token
+      // Fetch both account info and Netflix token in parallel.
+      // The checker token endpoint only needs NetflixId, so avoid an
+      // extra Playwright browser launch for token generation.
       const [accountResponse, tokenResponse] = await Promise.all([
         axios.post('/api/get-account-info', {
           cookies_text: cookiesText,
@@ -85,7 +86,7 @@ function App() {
         axios.post('/api/generate-netflix-token', {
           cookies_text: cookiesText,
           format_type: formatType,
-          use_playwright: true
+          use_playwright: false
         })
       ])
       
