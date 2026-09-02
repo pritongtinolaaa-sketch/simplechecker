@@ -80,6 +80,88 @@ class NetflixAccountInfo(BaseModel):
     error: Optional[str] = None
 
 # Cookie Parsing Functions
+COMPACT_NETFLIX_COOKIE_NAMES = (
+    "netflix-sans-normal-3-loaded",
+    "netflix-sans-bold-3-loaded",
+    "OptanonConsent",
+    "SecureNetflixId",
+    "profilesNewSession",
+    "NetflixId",
+    "nfvdid",
+    "flwssn",
+    "gsid",
+    "dscatrue",
+    "memclid",
+    "cl2",
+    "cL",
+    "ftl",
+    "lhpu",
+    "nfg",
+    "nfxp",
+)
+
+COMPACT_NETFLIX_PREFIX = re.compile(
+    r"^(?P<domain>\.?(?:[A-Za-z0-9-]+\.)*netflix\.com)"
+    r"(?P<include_subdomains>TRUE|FALSE)(?P<path>/)"
+    r"(?P<secure>TRUE|FALSE)(?P<expires>\d{10,13})(?P<data>.+)$",
+    re.IGNORECASE,
+)
+
+COMPACT_NETFLIX_RECORD_START = re.compile(
+    r"(?=\.?(?:[A-Za-z0-9-]+\.)*netflix\.com"
+    r"(?:TRUE|FALSE)/(?:TRUE|FALSE)\d{10,13})",
+    re.IGNORECASE,
+)
+
+
+def _split_compact_netflix_records(line: str) -> List[str]:
+    """Split delimiter-free Netscape records using their repeated domain prefix."""
+    starts = [match.start() for match in COMPACT_NETFLIX_RECORD_START.finditer(line)]
+    if not starts:
+        return []
+
+    return [
+        line[start:end]
+        for start, end in zip(starts, starts[1:] + [len(line)])
+        if line[start:end].strip()
+    ]
+
+
+def _split_compact_cookie_data(data: str) -> tuple[Optional[str], Optional[str]]:
+    """Split a compact name/value pair using known Netflix cookie names."""
+    lowered = data.lower()
+    for name in sorted(COMPACT_NETFLIX_COOKIE_NAMES, key=len, reverse=True):
+        if lowered.startswith(name.lower()):
+            return name, data[len(name):]
+
+    # Preserve support for compact records that still contain a normal '='.
+    if "=" in data:
+        name, value = data.split("=", 1)
+        if re.fullmatch(r"[A-Za-z0-9_!-]+", name):
+            return name, value
+
+    return None, None
+
+
+def _parse_compact_netflix_record(record: str) -> Optional[Cookie]:
+    match = COMPACT_NETFLIX_PREFIX.match(record)
+    if not match:
+        return None
+
+    name, value = _split_compact_cookie_data(match.group("data"))
+    if not name or value is None:
+        return None
+
+    return Cookie(
+        name=name,
+        value=value,
+        domain=match.group("domain"),
+        path=match.group("path"),
+        expires=match.group("expires"),
+        secure=match.group("secure").upper() == "TRUE",
+    )
+
+
 def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
     """Parse Netscape format cookies (from browser dev tools)"""
     cookies = []
@@ -87,7 +169,7 @@ def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
     
     for line in text.strip().split('\n'):
         line = line.strip()
-        if line.startswith('#') or not line:
+        if line.startswith('#') or not line or re.fullmatch(r"=+", line):
             continue
         
         try:
@@ -103,7 +185,21 @@ def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
                     httponly=parts[8].lower() == 'true' if len(parts) > 8 else False
                 )
                 cookies.append(cookie)
-            elif '=' in line:
+                continue
+
+            compact_records = _split_compact_netflix_records(line)
+            if compact_records:
+                parsed_any = False
+                for record in compact_records:
+                    cookie = _parse_compact_netflix_record(record)
+                    if cookie:
+                        cookies.append(cookie)
+                        parsed_any = True
+                if not parsed_any:
+                    errors.append("Could not identify a cookie name in a compact Netflix record.")
+                continue
+
+            if '=' in line:
                 # Fallback for simple key=value pairs
                 for pair in line.split(';'):
                     pair = pair.strip()
