@@ -531,6 +531,25 @@ body {
   color: #ff6b9c;
 }
 
+.invalid-account-group .account-result {
+  --bundle-accent: #ff3b5c;
+  --bundle-background: rgba(255, 59, 92, 0.1);
+  border-color: rgba(255, 59, 92, 0.45);
+  box-shadow: 0 0 18px rgba(255, 59, 92, 0.1);
+}
+
+.invalid-account-group .account-result-header h3,
+.invalid-account-group .account-result .info-label,
+.invalid-account-group .bundle-token-header h4 {
+  color: #ff6b7f;
+}
+
+.invalid-account-group .account-result .badge-default {
+  background: #c6284f;
+  color: #ffffff;
+  border-color: #ff6b7f;
+}
+
 .account-results {
   display: flex;
   flex-direction: column;
