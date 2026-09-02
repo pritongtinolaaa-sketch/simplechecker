@@ -1168,12 +1168,20 @@ body {
 }
 
 .cookie-expanded-label {
-  margin: 0.8rem 0 0.45rem;
+  margin: 0;
   color: var(--primary-color);
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.cookie-expanded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.8rem 0 0.45rem;
 }
 
 .cookie-full-value {

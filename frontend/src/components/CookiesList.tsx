@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Icon from './Icon'
 
 interface Cookie {
@@ -55,6 +55,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
   tokenResults = [],
   loading
 }) => {
+  const [copiedBundleNumber, setCopiedBundleNumber] = useState<number | null>(null)
   const validCookies = cookies.filter(cookie => cookie.name && cookie.value)
   const accountByBundle = new Map(accounts.map(account => [account.bundle_number, account]))
   const tokenByBundle = new Map(tokenResults.map(token => [token.bundle_number, token]))
@@ -75,6 +76,16 @@ const CookiesList: React.FC<CookiesListProps> = ({
       .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
       .map(([name, count]) => `${name} (${count})`)
       .join(', ')
+  }
+
+  const handleCopyCookies = async (bundleNumber: number, cookieHeader: string) => {
+    try {
+      await navigator.clipboard.writeText(cookieHeader)
+      setCopiedBundleNumber(bundleNumber)
+      window.setTimeout(() => setCopiedBundleNumber(null), 1800)
+    } catch {
+      alert('Unable to copy cookies to the clipboard.')
+    }
   }
 
   if (loading) {
@@ -120,7 +131,17 @@ const CookiesList: React.FC<CookiesListProps> = ({
                 <div className="cookie-domain">
                   Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
                 </div>
-                <div className="cookie-expanded-label">Full cookie bundle</div>
+                <div className="cookie-expanded-header">
+                  <div className="cookie-expanded-label">Full cookie bundle</div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-small"
+                    onClick={() => handleCopyCookies(bundle.bundle_number, cookieHeader)}
+                  >
+                    <Icon name="copy" />
+                    {copiedBundleNumber === bundle.bundle_number ? 'Copied' : 'Copy Cookies'}
+                  </button>
+                </div>
                 <pre className="cookie-full-value">{cookieHeader}</pre>
               </div>
             </details>
