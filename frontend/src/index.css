@@ -538,6 +538,62 @@ body {
 }
 
 /* Netflix Token Display */
+.account-info {
+  padding: 1.5rem 2rem 2rem;
+}
+
+.info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.info-header h2 {
+  margin: 0;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 0.85rem;
+}
+
+.info-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(0, 233, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(7, 14, 28, 0.58);
+}
+
+.info-label {
+  flex: 0 0 auto;
+  color: var(--primary-color);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.info-label::after {
+  content: ':';
+}
+
+.info-value {
+  min-width: 0;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.info-value .status-badge {
+  display: inline-block;
+}
+
 .netflix-token {
   padding: 2rem;
   min-height: 400px;
@@ -917,8 +973,13 @@ body {
 
   .cookie-form,
   .cookie-display,
-  .netflix-token {
+  .netflix-token,
+  .account-info {
     padding: 1.5rem;
+  }
+
+  .info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .form-actions {
@@ -954,6 +1015,12 @@ body {
     gap: 0.5rem;
   }
 
+  .info-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .key-manager-form {
     grid-template-columns: 1fr;
   }
@@ -968,6 +1035,12 @@ body {
 
   .cookies-header,
   .cookie-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .info-grid {
     grid-template-columns: 1fr;
   }
 }
