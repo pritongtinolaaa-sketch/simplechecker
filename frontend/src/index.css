@@ -507,14 +507,34 @@ body {
 }
 
 .account-result {
+  --bundle-accent: #00e9ff;
+  --bundle-background: rgba(0, 233, 255, 0.06);
   padding: 1rem;
-  border: 1px solid rgba(0, 233, 255, 0.22);
+  border: 1px solid color-mix(in srgb, var(--bundle-accent) 35%, transparent);
+  border-left: 5px solid var(--bundle-accent);
   border-radius: var(--border-radius);
-  background: rgba(7, 14, 28, 0.45);
+  background: var(--bundle-background);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--bundle-accent) 8%, transparent);
+}
+
+.account-result:nth-child(4n + 2) {
+  --bundle-accent: #ff4d9a;
+  --bundle-background: rgba(255, 77, 154, 0.07);
+}
+
+.account-result:nth-child(4n + 3) {
+  --bundle-accent: #ffd166;
+  --bundle-background: rgba(255, 209, 102, 0.07);
+}
+
+.account-result:nth-child(4n + 4) {
+  --bundle-accent: #a78bfa;
+  --bundle-background: rgba(167, 139, 250, 0.08);
 }
 
 .account-result.failed {
-  border-color: rgba(255, 64, 129, 0.28);
+  --bundle-accent: #ff4081;
+  --bundle-background: rgba(255, 64, 129, 0.07);
 }
 
 .account-result-header {
@@ -527,12 +547,21 @@ body {
 
 .account-result-header h3 {
   margin: 0;
-  color: var(--primary-color);
+  color: var(--bundle-accent);
   font-size: 1rem;
 }
 
 .account-result .info-grid {
   margin-bottom: 0.85rem;
+}
+
+.account-result .info-label,
+.account-result .bundle-token-header h4 {
+  color: var(--bundle-accent);
+}
+
+.account-result .info-item {
+  border-color: color-mix(in srgb, var(--bundle-accent) 28%, transparent);
 }
 
 .account-result .profiles-section h3 {
@@ -542,7 +571,7 @@ body {
 .bundle-token {
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(0, 233, 255, 0.2);
+  border-top: 1px solid color-mix(in srgb, var(--bundle-accent) 35%, transparent);
 }
 
 .bundle-token-header {
@@ -555,7 +584,6 @@ body {
 
 .bundle-token-header h4 {
   margin: 0;
-  color: var(--primary-color);
 }
 
 .bundle-token .token-actions {

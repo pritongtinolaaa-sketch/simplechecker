@@ -10,12 +10,11 @@ const CookieForm: React.FC<CookieFormProps> = ({
   loading
 }) => {
   const [cookiesText, setCookiesText] = useState('')
-  const [formatType, setFormatType] = useState('auto')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (cookiesText.trim()) {
-      onSubmit(cookiesText, formatType)
+      onSubmit(cookiesText, 'auto')
     }
   }
 
@@ -27,20 +26,6 @@ const CookieForm: React.FC<CookieFormProps> = ({
     <form className="cookie-form" onSubmit={handleSubmit}>
       <h2>Input Cookies</h2>
       
-      <div className="form-group">
-        <label htmlFor="format">Format Type:</label>
-        <select 
-          id="format"
-          value={formatType} 
-          onChange={(e) => setFormatType(e.target.value)}
-          disabled={loading}
-        >
-          <option value="auto">Auto Detect</option>
-          <option value="netscape">Netscape (Browser Dev Tools)</option>
-          <option value="json">JSON Array</option>
-        </select>
-      </div>
-
       <div className="form-group">
         <label htmlFor="cookies">Paste Netflix Cookies:</label>
         <textarea
