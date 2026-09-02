@@ -79,6 +79,25 @@ body {
   z-index: 1;
 }
 
+.header::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 233, 255, 0.75) 25%,
+    rgba(255, 61, 242, 0.7) 50%,
+    rgba(0, 233, 255, 0.75) 75%,
+    transparent 100%
+  );
+  box-shadow: 0 0 12px rgba(0, 233, 255, 0.35);
+}
+
 .header-content {
   display: flex;
   justify-content: space-between;
