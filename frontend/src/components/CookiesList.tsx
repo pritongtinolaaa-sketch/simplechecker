@@ -101,23 +101,30 @@ const CookiesList: React.FC<CookiesListProps> = ({
           const cookieHeader = bundleCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
 
           return (
-            <div className="cookie-item" key={bundle.bundle_number}>
-              <div className="cookie-number-badge">#{bundle.bundle_number}</div>
-              <div className="cookie-main">
-                <div className="cookie-name">
-                  <strong>Live Cookie Bundle #{bundle.bundle_number}</strong>
+            <details className="cookie-item" key={bundle.bundle_number}>
+              <summary className="cookie-item-summary">
+                <div className="cookie-number-badge">#{bundle.bundle_number}</div>
+                <div className="cookie-main">
+                  <div className="cookie-name">
+                    <strong>Live Cookie Bundle #{bundle.bundle_number}</strong>
+                    <span className="cookie-expand-hint">Click to view full bundle</span>
+                  </div>
+                  <div className="cookie-value">
+                    <code>{cookieHeader.substring(0, 180)}{cookieHeader.length > 180 ? '...' : ''}</code>
+                  </div>
+                  <div className="cookie-domain">
+                    Records included: <code>{bundleCookies.length.toLocaleString()}</code>
+                  </div>
+                  <div className="cookie-domain">
+                    Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
+                  </div>
                 </div>
-                <div className="cookie-value">
-                  <code>{cookieHeader.substring(0, 180)}{cookieHeader.length > 180 ? '...' : ''}</code>
-                </div>
-                <div className="cookie-domain">
-                  Records included: <code>{bundleCookies.length.toLocaleString()}</code>
-                </div>
-                <div className="cookie-domain">
-                  Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
-                </div>
+              </summary>
+              <div className="cookie-expanded">
+                <div className="cookie-expanded-label">Full cookie bundle</div>
+                <pre className="cookie-full-value">{cookieHeader}</pre>
               </div>
-            </div>
+            </details>
           )
         })}
       </div>
