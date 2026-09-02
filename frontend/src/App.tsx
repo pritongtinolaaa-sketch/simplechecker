@@ -153,6 +153,7 @@ function App() {
           </div>
         </div>
       </main>
+      <footer className="footer">© Schiro 2026</footer>
     </div>
   )
 }
