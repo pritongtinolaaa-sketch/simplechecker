@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import Icon from './Icon'
 
 interface CookieFormProps {
   onSubmit: (cookiesText: string, formatType: string) => void
@@ -53,7 +54,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
           className="btn btn-primary"
           disabled={loading || !cookiesText.trim()}
         >
-          {loading ? 'Processing...' : '🎬 Get Netflix Info'}
+          {loading ? 'Processing...' : <><Icon name="film" /> Get Netflix Info</>}
         </button>
         <button 
           type="button" 

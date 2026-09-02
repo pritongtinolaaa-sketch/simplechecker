@@ -1,4 +1,5 @@
 import React from 'react'
+import Icon from './Icon'
 import {
   buildCookieDownloadContent,
   downloadTextFile,
@@ -86,7 +87,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   if (loading && !hasPartialResults) {
     return (
       <div className="account-info loading">
-        <h2>📊 Account Information</h2>
+        <h2><Icon name="chart" /> Account Information</h2>
         <p>Starting cookie bundle checks...</p>
       </div>
     )
@@ -221,7 +222,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             {account.profiles.map((profile, idx) => (
               <div key={idx} className="profile-card">
                 <div className="profile-icon">
-                  {profile.isKids ? '👶' : '👤'}
+                  <Icon name="user" size={20} />
                 </div>
                 <div className="profile-info">
                   <div className="profile-name">{profile.name}</div>
@@ -259,7 +260,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       <div className="bundle-token">
         <div className="bundle-token-header">
           <h4>Netflix Token Link</h4>
-          <span className="badge badge-success">✓ Ready</span>
+          <span className="badge badge-success"><Icon name="check" /> Ready</span>
         </div>
         <div className="token-link-container">
           <a
@@ -273,7 +274,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         </div>
         <div className="token-actions">
           <button className="btn btn-primary" onClick={handleCopyToken}>
-            📋 Copy Link
+            <><Icon name="copy" /> Copy Link</>
           </button>
           <a
             href={tokenUrl}
@@ -281,7 +282,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             rel="noopener noreferrer"
             className="btn btn-primary"
           >
-            🚀 Open in Netflix
+            <><Icon name="external" /> Open in Netflix</>
           </a>
           <a
             href={phoneTokenUrl}
@@ -289,7 +290,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             rel="noopener noreferrer"
             className="btn btn-primary"
           >
-            📱 Open in Phone
+            <><Icon name="phone" /> Open in Phone</>
           </a>
         </div>
       </div>
@@ -309,7 +310,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           <h3>Cookie Bundle #{account.bundle_number}</h3>
           <div className="account-result-actions">
             <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
-              {bundleIsLive ? '✓ Live' : 'Expired / Invalid'}
+              {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
             </span>
             {bundleIsLive && cookieBundleByNumber.has(account.bundle_number) && (
               <button
@@ -317,7 +318,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
                 onClick={() => downloadBundle(cookieBundleByNumber.get(account.bundle_number)!)}
                 title={`Download Cookie Bundle #${account.bundle_number}`}
               >
-                📥 Download
+                <><Icon name="download" /> Download</>
               </button>
             )}
           </div>
@@ -344,7 +345,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   if (error && !hasAccountResults) {
     return (
       <div className="account-info error">
-        <h2>📊 Account Information</h2>
+        <h2><Icon name="chart" /> Account Information</h2>
         <div className="alert alert-error">
           <strong>Error:</strong> {error}
         </div>
@@ -355,7 +356,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   if (!hasAccountResults && !email && !country && !plan && !billingDate && !paymentMethod) {
     return (
       <div className="account-info empty">
-        <h2>📊 Account Information</h2>
+        <h2><Icon name="chart" /> Account Information</h2>
         <p>Click "Get Netflix Info" to extract account details from cookies.</p>
       </div>
     )
@@ -365,14 +366,14 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     <div className="account-info">
       <div className="info-header">
         <h2>
-          📊 Live Account Information
+          <Icon name="chart" /> Live Account Information
           {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
         <div className="info-header-actions">
           <span className={`badge ${loading ? 'badge-checking' : 'badge-success'}`}>
             {hasAccountResults
               ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
-              : '✓ Retrieved'}
+              : <><Icon name="check" /> Retrieved</>}
           </span>
           <button
             className="btn btn-secondary btn-small download-all-btn"
@@ -380,7 +381,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             disabled={loading || liveCookieBundles.length === 0}
             title={loading ? 'Available when checking is complete' : 'Download all live cookies'}
           >
-            📥 Download All{liveCookieBundles.length > 0 ? ` (${liveCookieBundles.length})` : ''}
+            <><Icon name="download" /> Download All{liveCookieBundles.length > 0 ? ` (${liveCookieBundles.length})` : ''}</>
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import React from 'react'
+import Icon from './Icon'
 
 interface Cookie {
   name: string
@@ -103,12 +104,12 @@ const CookieDisplay: React.FC<CookieDisplayProps> = ({
                 <td className="cookie-path">{cookie.path || '/'}</td>
                 <td className="cookie-secure">
                   <span className={`badge ${cookie.secure ? 'badge-success' : 'badge-default'}`}>
-                    {cookie.secure ? '✓' : '✗'}
+                    <Icon name={cookie.secure ? 'check' : 'close'} size={14} />
                   </span>
                 </td>
                 <td className="cookie-httponly">
                   <span className={`badge ${cookie.httponly ? 'badge-success' : 'badge-default'}`}>
-                    {cookie.httponly ? '✓' : '✗'}
+                    <Icon name={cookie.httponly ? 'check' : 'close'} size={14} />
                   </span>
                 </td>
               </tr>
@@ -119,10 +120,10 @@ const CookieDisplay: React.FC<CookieDisplayProps> = ({
 
       <div className="display-actions">
         <button className="btn btn-primary" onClick={onCopy}>
-          📋 Copy as JSON
+          <><Icon name="copy" /> Copy as JSON</>
         </button>
         <button className="btn btn-primary" onClick={onDownload}>
-          ⬇️ Download JSON
+          <><Icon name="download" /> Download JSON</>
         </button>
       </div>
 

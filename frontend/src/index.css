@@ -151,6 +151,21 @@ body {
   letter-spacing: 0.04em;
 }
 
+.cookie-form h2,
+.cookie-display h2,
+.info-header h2,
+.cookies-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.ui-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: -0.16em;
+}
+
 .form-group {
   margin-bottom: 1.5rem;
 }
@@ -202,7 +217,10 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -440,7 +458,9 @@ body {
 
 /* Badges */
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-weight: 600;

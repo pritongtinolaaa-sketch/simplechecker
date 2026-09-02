@@ -1,4 +1,5 @@
 import React from 'react'
+import Icon from './Icon'
 
 interface Cookie {
   name: string
@@ -91,7 +92,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
   return (
     <div className="cookies-list">
       <div className="cookies-header">
-        <h3>✅ Checked Live Cookie Bundles ({liveBundles.length.toLocaleString()})</h3>
+        <h3><Icon name="circleCheck" /> Checked Live Cookie Bundles ({liveBundles.length.toLocaleString()})</h3>
       </div>
 
       <div className="cookies-container">
