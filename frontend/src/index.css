@@ -93,12 +93,23 @@ body {
 }
 
 .header-content h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
   font-size: 2rem;
   margin-bottom: 0.25rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-shadow: 0 0 18px rgba(0, 233, 255, 0.45);
+}
+
+.header-cookie-icon {
+  color: #8ffaff;
+  filter: drop-shadow(0 0 7px rgba(0, 233, 255, 0.65))
+    drop-shadow(0 0 12px rgba(255, 61, 242, 0.25));
+  stroke-width: 1.65;
 }
 
 .header-content p {
@@ -1250,7 +1261,13 @@ body {
   }
 
   .header-content h1 {
+    gap: 0.5rem;
     font-size: 1.55rem;
+  }
+
+  .header-cookie-icon {
+    width: 30px;
+    height: 30px;
   }
 
   .cookie-form,

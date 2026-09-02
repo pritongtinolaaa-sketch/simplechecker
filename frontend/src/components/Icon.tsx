@@ -4,6 +4,7 @@ export type IconName =
   | 'chart'
   | 'check'
   | 'circleCheck'
+  | 'cookie'
   | 'close'
   | 'copy'
   | 'download'
@@ -52,6 +53,14 @@ const Icon: React.FC<IconProps> = ({ name, size = 16, className }) => {
         <>
           <circle cx="12" cy="12" r="9" />
           <path d="m8 12 2.5 2.5L16.5 9" />
+        </>
+      )}
+      {name === 'cookie' && (
+        <>
+          <path d="M19.5 13.2a3.7 3.7 0 0 1-4.7-4.7A8.5 8.5 0 1 0 19.5 13.2Z" />
+          <circle cx="8.2" cy="9.2" r="1" />
+          <circle cx="12.4" cy="14.2" r="1" />
+          <circle cx="8.2" cy="16.7" r="1" />
         </>
       )}
       {name === 'close' && (
