@@ -95,7 +95,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
       `Netflix Token Link: ${tokenUrl}`,
       `Open in Netflix: ${tokenUrl}`,
       `Open in Phone: ${phoneTokenUrl}`,
-    ].join('\n') + '\n'
+    ].join('\n\n') + '\n'
   }
 
   const buildAccountInfoBlock = (
