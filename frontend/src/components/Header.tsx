@@ -10,7 +10,8 @@ const Header: React.FC = () => {
             <Icon name="cookie" size={38} className="header-cookie-icon" />
             <span>Cookie Checker</span>
           </h1>
-          <p>Extract and analyze cookies from your browser or files</p>
+          <span className="header-credit">by Schiro</span>
+          <p className="header-subtitle">Extract and analyze cookies from your browser or files</p>
         </div>
       </div>
     </header>

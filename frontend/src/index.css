@@ -124,6 +124,18 @@ body {
   text-shadow: 0 0 18px rgba(0, 233, 255, 0.45);
 }
 
+.header-credit {
+  display: block;
+  margin: -0.15rem 0 0.15rem;
+  color: #ff9df7;
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 61, 242, 0.42);
+}
+
 .header-cookie-icon {
   color: #8ffaff;
   filter: drop-shadow(0 0 7px rgba(0, 233, 255, 0.65))
@@ -132,7 +144,8 @@ body {
   transform: translateY(-3px);
 }
 
-.header-content p {
+.header-subtitle {
+  margin: 0;
   font-size: 0.9rem;
   opacity: 0.9;
 }
