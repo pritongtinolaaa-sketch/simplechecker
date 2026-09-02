@@ -91,11 +91,14 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     profiles
   }
   const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount]
-  const successfulAccountCount = accountResults.filter(account => account.success).length
   const totalAccountCount = accountCount ?? accountResults.length
   const tokenByBundle = new Map(
     (tokenResults || []).map((tokenResult) => [tokenResult.bundle_number, tokenResult])
   )
+  const isBundleLive = (account: AccountResult) =>
+    account.success || Boolean(tokenByBundle.get(account.bundle_number)?.success)
+  const liveAccountResults = accountResults.filter(isBundleLive)
+  const invalidAccountResults = accountResults.filter(account => !isBundleLive(account))
 
   const renderAccountDetails = (account: AccountResult) => (
     <>
@@ -243,6 +246,40 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     )
   }
 
+  const renderAccountResult = (account: AccountResult) => {
+    const bundleIsLive = isBundleLive(account)
+    const tokenResult = tokenByBundle.get(account.bundle_number)
+
+    return (
+      <div
+        key={account.bundle_number}
+        className={`account-result ${bundleIsLive ? '' : 'failed'}`}
+      >
+        <div className="account-result-header">
+          <h3>Cookie Bundle #{account.bundle_number}</h3>
+          <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
+            {bundleIsLive ? '✓ Live' : 'Expired / Invalid'}
+          </span>
+        </div>
+
+        {account.success ? (
+          renderAccountDetails(account)
+        ) : bundleIsLive ? (
+          <div className="alert alert-warning">
+            <strong>Account details unavailable:</strong> The cookies generated a live token,
+            but Netflix did not return account details.
+          </div>
+        ) : (
+          <div className="alert alert-error">
+            <strong>Error:</strong> {account.error || 'Cookies may be expired or invalid'}
+          </div>
+        )}
+
+        {tokenResult && renderBundleToken(tokenResult)}
+      </div>
+    )
+  }
+
   if (error && !hasAccountResults) {
     return (
       <div className="account-info error">
@@ -268,10 +305,10 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       <div className="info-header">
         <h2>
           📊 Live Account Information
-          {hasAccountResults && ` (${successfulAccountCount}/${totalAccountCount})`}
+          {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
         <span className="badge badge-success">
-          {hasAccountResults ? `${successfulAccountCount} Retrieved` : '✓ Retrieved'}
+          {hasAccountResults ? `${liveAccountResults.length} Live` : '✓ Retrieved'}
         </span>
       </div>
 
@@ -282,32 +319,29 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         </p>
       )}
 
-      <div className="account-results">
-        {accountResults.map((account) => (
-          <div
-            key={account.bundle_number}
-            className={`account-result ${account.success ? '' : 'failed'}`}
-          >
-            <div className="account-result-header">
-              <h3>Cookie Bundle #{account.bundle_number}</h3>
-              <span className={`badge ${account.success ? 'badge-success' : 'badge-default'}`}>
-                {account.success ? '✓ Live' : 'Unavailable'}
-              </span>
-            </div>
-
-            {account.success ? (
-              renderAccountDetails(account)
-            ) : (
-              <div className="alert alert-error">
-                <strong>Error:</strong> {account.error || 'Could not extract account information'}
-              </div>
-            )}
-
-            {tokenByBundle.has(account.bundle_number) &&
-              renderBundleToken(tokenByBundle.get(account.bundle_number)!)}
+      {liveAccountResults.length > 0 && (
+        <section className="account-group live-account-group">
+          <div className="account-group-header">
+            <h3>Working / Live Cookies ({liveAccountResults.length})</h3>
+            <span>Ready to use</span>
           </div>
-        ))}
-      </div>
+          <div className="account-results">
+            {liveAccountResults.map(renderAccountResult)}
+          </div>
+        </section>
+      )}
+
+      {invalidAccountResults.length > 0 && (
+        <section className="account-group invalid-account-group">
+          <div className="account-group-header">
+            <h3>Expired / Invalid Cookies ({invalidAccountResults.length})</h3>
+            <span>Not working</span>
+          </div>
+          <div className="account-results">
+            {invalidAccountResults.map(renderAccountResult)}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

@@ -497,6 +497,40 @@ body {
   opacity: 0.85;
 }
 
+.account-group + .account-group {
+  margin-top: 1.5rem;
+}
+
+.account-group-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(0, 233, 255, 0.2);
+}
+
+.account-group-header h3 {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: 1.05rem;
+}
+
+.account-group-header span {
+  color: var(--text-color);
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.invalid-account-group .account-group-header {
+  border-bottom-color: rgba(255, 64, 129, 0.35);
+}
+
+.invalid-account-group .account-group-header h3 {
+  color: #ff6b9c;
+}
+
 .account-results {
   display: flex;
   flex-direction: column;
