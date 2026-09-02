@@ -391,13 +391,14 @@ body {
 }
 
 .form-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 3fr 1fr;
   gap: 1rem;
   margin-bottom: 2rem;
 }
 
 .form-actions .btn {
-  flex: 1;
+  width: 100%;
 }
 
 .check-progress {
