@@ -266,12 +266,12 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           renderAccountDetails(account)
         ) : bundleIsLive ? (
           <div className="alert alert-warning">
-            <strong>Account details unavailable:</strong> The cookies generated a live token,
-            but Netflix did not return account details.
+            <strong>Account details unavailable:</strong> {account.error ||
+              'The cookies generated a live token, but Netflix did not return account details.'}
           </div>
         ) : (
           <div className="alert alert-error">
-            <strong>Error:</strong> {account.error || 'Cookies may be expired or invalid'}
+            <strong>Error:</strong> {tokenResult?.error || account.error || 'Cookies may be expired or invalid'}
           </div>
         )}
 

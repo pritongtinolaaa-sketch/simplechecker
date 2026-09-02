@@ -87,6 +87,8 @@ class NetflixAccountInfo(BaseModel):
     bundle_count: int = 0
     checked_cookie_count: int = 0
 
+LARGE_IMPORT_ACCOUNT_LOOKUP_THRESHOLD = 20
+
 # Cookie Parsing Functions
 COMPACT_NETFLIX_COOKIE_NAMES = (
     "netflix-sans-normal-3-loaded",
@@ -1113,6 +1115,32 @@ async def get_account_info(
             return NetflixAccountInfo(
                 success=False,
                 error="No cookie bundles parsed from input"
+            )
+
+        if len(bundles) > LARGE_IMPORT_ACCOUNT_LOOKUP_THRESHOLD:
+            total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
+            account_results = [
+                {
+                    "bundle_number": index,
+                    "cookie_count": len(bundle_cookies),
+                    "success": False,
+                    "error": (
+                        "Account details skipped for this large import; "
+                        "live status is determined by token validation."
+                    ),
+                }
+                for index, (bundle_cookies, _) in enumerate(bundles, 1)
+            ]
+            return NetflixAccountInfo(
+                success=False,
+                error=(
+                    "Account details were skipped for this large import. "
+                    "Live status is determined by token validation."
+                ),
+                accounts=account_results,
+                account_count=len(account_results),
+                bundle_count=len(bundles),
+                checked_cookie_count=total_cookies,
             )
 
         lookup_semaphore = asyncio.Semaphore(4)
