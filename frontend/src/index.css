@@ -155,7 +155,7 @@ body {
 
 .app-container {
   flex: 1;
-  padding: 2rem;
+  padding: 0.9rem 2rem 2rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -1402,7 +1402,7 @@ body {
 /* Responsive */
 @media (max-width: 768px) {
   .app-container {
-    padding: 1rem;
+    padding: 0.7rem 1rem 1rem;
   }
 
   .header {
