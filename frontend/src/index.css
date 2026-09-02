@@ -202,11 +202,22 @@ body {
   min-height: 300px;
 }
 
+.input-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.input-label-row > label {
+  margin-bottom: 0;
+}
+
 .file-upload-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -234,6 +245,14 @@ body {
   opacity: 0.75;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .input-label-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
 }
 
 .form-group select:disabled,

@@ -51,7 +51,26 @@ const CookieForm: React.FC<CookieFormProps> = ({
       <h2>Input Cookies</h2>
       
       <div className="form-group">
-        <label htmlFor="cookies">Paste Netflix Cookies:</label>
+        <div className="input-label-row">
+          <label htmlFor="cookies">Paste Netflix Cookies:</label>
+          <div className="file-upload-row">
+            <label className="btn btn-secondary file-upload-button">
+              <Icon name="upload" /> Upload .txt File
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,text/plain"
+                onChange={handleFileUpload}
+                disabled={loading}
+              />
+            </label>
+            {selectedFileName && (
+              <span className="file-upload-name" title={selectedFileName}>
+                {selectedFileName}
+              </span>
+            )}
+          </div>
+        </div>
         <textarea
           id="cookies"
           className="cookies-textarea"
@@ -64,23 +83,6 @@ const CookieForm: React.FC<CookieFormProps> = ({
           disabled={loading}
           rows={12}
         />
-        <div className="file-upload-row">
-          <label className="btn btn-secondary file-upload-button">
-            <Icon name="upload" /> Upload .txt File
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,text/plain"
-              onChange={handleFileUpload}
-              disabled={loading}
-            />
-          </label>
-          {selectedFileName && (
-            <span className="file-upload-name" title={selectedFileName}>
-              {selectedFileName}
-            </span>
-          )}
-        </div>
       </div>
 
       <div className="form-actions">
