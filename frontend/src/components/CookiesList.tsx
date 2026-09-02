@@ -99,7 +99,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
     token: TokenResult | undefined
   ) => {
     const details = account || (bundleNumber === 1 ? accountInfo : undefined)
-    let content = `Cookie #${bundleNumber}\n`
+    let content = `Cookie #${bundleNumber}\n\n`
     content += 'Account info:\n'
 
     if (details?.success) {
