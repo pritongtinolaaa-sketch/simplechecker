@@ -286,24 +286,30 @@ def _extract_bracketed_json_arrays(text: str) -> List[list]:
     return arrays
 
 
+def _extract_cookie_json_arrays(text: str) -> List[List[Cookie]]:
+    """Extract only JSON arrays that contain browser cookie objects."""
+    cookie_arrays = []
+    for data in _extract_bracketed_json_arrays(text):
+        cookies = _cookies_from_json_data(data)
+        if cookies:
+            cookie_arrays.append(cookies)
+    return cookie_arrays
+
+
 def parse_json_cookies(text: str) -> tuple[List[Cookie], List[str]]:
     """Parse standard JSON or newline-delimited bracketed JSON cookie arrays."""
     try:
         data = json.loads(text)
         return _cookies_from_json_data(data), []
     except json.JSONDecodeError as json_error:
-        arrays = _extract_bracketed_json_arrays(text)
-        if not arrays:
+        cookie_arrays = _extract_cookie_json_arrays(text)
+        if not cookie_arrays:
             return [], [f"Invalid JSON: {str(json_error)}"]
 
         cookies = []
         errors = []
-        for index, data in enumerate(arrays, 1):
-            bundle_cookies = _cookies_from_json_data(data)
-            if bundle_cookies:
-                cookies.extend(bundle_cookies)
-            else:
-                errors.append(f"Bracketed JSON bundle #{index} contains no cookie objects.")
+        for bundle_cookies in cookie_arrays:
+            cookies.extend(bundle_cookies)
 
         return cookies, errors
 
@@ -315,6 +321,10 @@ def parse_cookies_auto(text: str) -> tuple[List[Cookie], List[str]]:
         cookies, errors = parse_json_cookies(text)
         if cookies:
             return cookies, errors
+    else:
+        cookie_arrays = _extract_cookie_json_arrays(text)
+        if cookie_arrays:
+            return [cookie for bundle in cookie_arrays for cookie in bundle], []
     
     return parse_netscape_cookies(text)
 
@@ -326,25 +336,21 @@ def parse_cookie_bundles(
     """Parse cookie sets separately when an export includes separator lines."""
     format_type = format_type.lower()
 
+    if format_type in ("auto", "json") and not text.lstrip().startswith(("[", "{")):
+        cookie_arrays = _extract_cookie_json_arrays(text)
+        if cookie_arrays:
+            return [(bundle_cookies, []) for bundle_cookies in cookie_arrays], []
+
     if format_type == "json" or (format_type == "auto" and text.lstrip().startswith(("[", "{"))):
         try:
             data = json.loads(text)
             cookies = _cookies_from_json_data(data)
             return ([(cookies, [])] if cookies else []), []
         except json.JSONDecodeError as json_error:
-            arrays = _extract_bracketed_json_arrays(text)
-            if arrays:
+            cookie_arrays = _extract_cookie_json_arrays(text)
+            if cookie_arrays:
                 bundles = []
-                all_errors = []
-                for index, data in enumerate(arrays, 1):
-                    bundle_cookies = _cookies_from_json_data(data)
-                    if bundle_cookies:
-                        bundles.append((bundle_cookies, []))
-                    else:
-                        all_errors.append(
-                            f"Bracketed JSON bundle #{index} contains no cookie objects."
-                        )
-                return bundles, all_errors
+                return [(bundle_cookies, []) for bundle_cookies in cookie_arrays], []
 
             cookies, errors = parse_json_cookies(text)
             if not cookies:

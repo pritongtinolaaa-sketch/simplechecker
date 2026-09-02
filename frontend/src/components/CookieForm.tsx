@@ -41,7 +41,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
           className="cookies-textarea"
           value={cookiesText}
           onChange={(e) => setCookiesText(e.target.value)}
-          placeholder="Paste your Netflix cookies here (Netscape format or JSON)..."
+          placeholder="Paste Netflix cookies, JSON, or a Netflix Account Details export..."
           disabled={loading}
           rows={12}
         />
