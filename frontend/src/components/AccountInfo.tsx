@@ -1,4 +1,8 @@
 import React from 'react'
+import {
+  buildCookieDownloadContent,
+  downloadTextFile,
+} from '../utils/cookieDownload'
 
 interface Profile {
   name: string
@@ -29,9 +33,18 @@ interface TokenResult {
   error?: string
 }
 
+interface CookieBundle {
+  bundle_number: number
+  cookies: Array<{
+    name: string
+    value: string
+  }>
+}
+
 interface AccountInfoProps {
   accounts?: AccountResult[]
   tokenResults?: TokenResult[]
+  cookieBundles?: CookieBundle[]
   accountCount?: number
   bundleCount?: number
   checkedCookieCount?: number
@@ -51,6 +64,7 @@ interface AccountInfoProps {
 const AccountInfo: React.FC<AccountInfoProps> = ({
   accounts,
   tokenResults,
+  cookieBundles = [],
   accountCount,
   bundleCount,
   checkedCookieCount,
@@ -94,13 +108,47 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   }
   const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount]
   const totalAccountCount = accountCount ?? accountResults.length
+  const accountByBundle = new Map(
+    accountResults.map((account) => [account.bundle_number, account])
+  )
   const tokenByBundle = new Map(
     (tokenResults || []).map((tokenResult) => [tokenResult.bundle_number, tokenResult])
+  )
+  const cookieBundleByNumber = new Map(
+    cookieBundles.map((bundle) => [bundle.bundle_number, bundle])
   )
   const isBundleLive = (account: AccountResult) =>
     account.success || Boolean(tokenByBundle.get(account.bundle_number)?.success)
   const liveAccountResults = accountResults.filter(isBundleLive)
   const invalidAccountResults = accountResults.filter(account => !isBundleLive(account))
+  const liveCookieBundles = cookieBundles.filter((bundle) => {
+    const account = accountByBundle.get(bundle.bundle_number)
+    const token = tokenByBundle.get(bundle.bundle_number)
+    return Boolean(account?.success || token?.success)
+  })
+
+  const downloadBundle = (bundle: CookieBundle) => {
+    const account = accountByBundle.get(bundle.bundle_number) ||
+      (bundle.bundle_number === 1 ? fallbackAccount : undefined)
+    const token = tokenByBundle.get(bundle.bundle_number)
+    const content = buildCookieDownloadContent(bundle, account, token)
+    downloadTextFile(content, `netflix-live-cookie-${bundle.bundle_number}.txt`)
+  }
+
+  const handleDownloadAll = () => {
+    if (loading || liveCookieBundles.length === 0) return
+
+    const content = liveCookieBundles
+      .map((bundle) => {
+        const account = accountByBundle.get(bundle.bundle_number) ||
+          (bundle.bundle_number === 1 ? fallbackAccount : undefined)
+        const token = tokenByBundle.get(bundle.bundle_number)
+        return buildCookieDownloadContent(bundle, account, token)
+      })
+      .join('\n')
+
+    downloadTextFile(content, 'netflix-live-cookies.txt')
+  }
 
   const renderAccountDetails = (account: AccountResult) => (
     <>
@@ -259,9 +307,20 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       >
         <div className="account-result-header">
           <h3>Cookie Bundle #{account.bundle_number}</h3>
-          <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
-            {bundleIsLive ? '✓ Live' : 'Expired / Invalid'}
-          </span>
+          <div className="account-result-actions">
+            <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
+              {bundleIsLive ? '✓ Live' : 'Expired / Invalid'}
+            </span>
+            {bundleIsLive && cookieBundleByNumber.has(account.bundle_number) && (
+              <button
+                className="btn btn-secondary btn-small bundle-download-btn"
+                onClick={() => downloadBundle(cookieBundleByNumber.get(account.bundle_number)!)}
+                title={`Download Cookie Bundle #${account.bundle_number}`}
+              >
+                📥 Download
+              </button>
+            )}
+          </div>
         </div>
 
         {account.success ? (
@@ -309,11 +368,21 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           📊 Live Account Information
           {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
-        <span className={`badge ${loading ? 'badge-checking' : 'badge-success'}`}>
-          {hasAccountResults
-            ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
-            : '✓ Retrieved'}
-        </span>
+        <div className="info-header-actions">
+          <span className={`badge ${loading ? 'badge-checking' : 'badge-success'}`}>
+            {hasAccountResults
+              ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
+              : '✓ Retrieved'}
+          </span>
+          <button
+            className="btn btn-secondary btn-small download-all-btn"
+            onClick={handleDownloadAll}
+            disabled={loading || liveCookieBundles.length === 0}
+            title={loading ? 'Available when checking is complete' : 'Download all live cookies'}
+          >
+            📥 Download All{liveCookieBundles.length > 0 ? ` (${liveCookieBundles.length})` : ''}
+          </button>
+        </div>
       </div>
 
       {hasAccountResults && (

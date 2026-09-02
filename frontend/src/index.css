@@ -544,6 +544,22 @@ body {
   margin-bottom: 1rem;
 }
 
+.info-header-actions,
+.account-result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.download-all-btn:disabled {
+  background: #3f464e;
+  color: #b7bec5;
+  border-color: #626a73;
+  box-shadow: none;
+  opacity: 0.85;
+}
+
 .info-header h2 {
   margin: 0;
 }

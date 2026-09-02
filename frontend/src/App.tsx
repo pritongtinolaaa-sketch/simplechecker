@@ -126,6 +126,7 @@ function App() {
             <AccountInfo
               accounts={accountInfo?.accounts}
               tokenResults={tokenResults}
+              cookieBundles={cookieBundles}
               accountCount={accountInfo?.account_count}
               bundleCount={accountInfo?.bundle_count}
               checkedCookieCount={accountInfo?.checked_cookie_count}
@@ -147,7 +148,6 @@ function App() {
               cookieBundles={cookieBundles}
               accounts={accountInfo?.accounts}
               tokenResults={tokenResults}
-              accountInfo={accountInfo}
               loading={loading}
             />
           </div>
