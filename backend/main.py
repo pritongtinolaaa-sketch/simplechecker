@@ -282,13 +282,24 @@ def _parse_compact_netflix_record(record: str) -> Optional[Cookie]:
 def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
     cookies = []
     errors = []
+
+    def is_cookie_name(name: str) -> bool:
+        return bool(re.fullmatch(r"[A-Za-z0-9!#$%&'*+\-.^_`|~]+", name))
+
     for line in text.strip().split("\n"):
         line = line.strip()
         if line.startswith("#") or not line or re.fullmatch(r"=+", line):
             continue
         try:
             parts = line.split("\t")
-            if len(parts) >= 7:
+            is_netscape_row = (
+                len(parts) >= 7
+                and parts[1].upper() in ("TRUE", "FALSE")
+                and parts[3].upper() in ("TRUE", "FALSE")
+                and re.fullmatch(r"-?\d+", parts[4]) is not None
+                and is_cookie_name(parts[5].strip())
+            )
+            if is_netscape_row:
                 cookie = Cookie(
                     name=parts[5],
                     value=parts[6],
@@ -318,7 +329,9 @@ def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
                     pair = pair.strip()
                     if "=" in pair:
                         k, _, v = pair.partition("=")
-                        cookies.append(Cookie(name=k.strip(), value=v.strip()))
+                        cookie_name = k.strip()
+                        if is_cookie_name(cookie_name):
+                            cookies.append(Cookie(name=cookie_name, value=v.strip()))
         except Exception as e:
             errors.append(f"Failed to parse line: {line}. Error: {str(e)}")
     return cookies, errors
