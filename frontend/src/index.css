@@ -1140,26 +1140,6 @@ body {
   color: var(--primary-color);
 }
 
-.token-link-container {
-  background: rgba(7, 14, 28, 0.86);
-  border: 1px solid rgba(0, 233, 255, 0.35);
-  border-radius: var(--border-radius);
-  padding: 0.9rem;
-  margin-bottom: 1rem;
-}
-
-.token-link {
-  color: #98fbff;
-  word-break: break-all;
-  text-decoration: none;
-  text-shadow: 0 0 10px rgba(0, 233, 255, 0.38);
-}
-
-.token-link:hover {
-  color: #ffffff;
-  text-decoration: underline;
-}
-
 .status-badge {
   padding: 0.2rem 0.55rem;
   border-radius: 999px;

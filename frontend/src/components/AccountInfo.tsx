@@ -249,33 +249,23 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
 
     const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
     const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
-
-    const handleCopyToken = () => {
-      navigator.clipboard.writeText(tokenUrl).then(() => {
-        alert('Netflix token link copied to clipboard!')
-      })
-    }
+    const tvLoginUrl = 'https://www.netflix.com/tv8'
 
     return (
       <div className="bundle-token">
         <div className="bundle-token-header">
-          <h4>Netflix Token Link</h4>
+          <h4>Netflix Login Options</h4>
           <span className="badge badge-success"><Icon name="check" /> Ready</span>
         </div>
-        <div className="token-link-container">
+        <div className="token-actions">
           <a
-            href={tokenUrl}
+            href={tvLoginUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="token-link"
+            className="btn btn-primary"
           >
-            {tokenUrl}
+            <><Icon name="external" /> TV Login</>
           </a>
-        </div>
-        <div className="token-actions">
-          <button className="btn btn-primary" onClick={handleCopyToken}>
-            <><Icon name="copy" /> Copy Link</>
-          </button>
           <a
             href={tokenUrl}
             target="_blank"
