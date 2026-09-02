@@ -11,100 +11,139 @@ interface Cookie {
   samesite?: string
 }
 
+interface CookieBundle {
+  bundle_number: number
+  cookies: Cookie[]
+}
+
+interface AccountResult {
+  bundle_number: number
+  cookie_count: number
+  success: boolean
+  email?: string
+  country?: string
+  plan?: string
+  subscription_status?: string
+  billing_date?: string
+  account_created_date?: string
+  payment_method?: string
+  streaming_quality?: string
+  profiles?: Array<{ name: string; isKids?: boolean }>
+  error?: string
+}
+
+interface TokenResult {
+  bundle_number: number
+  success: boolean
+  nftoken?: string
+  error?: string
+}
+
 interface CookiesListProps {
   cookies: Cookie[]
-  accountInfo?: {
-    email?: string
-    country?: string
-    plan?: string
-    subscription_status?: string
-    billing_date?: string
-    account_created_date?: string
-    payment_method?: string
-    streaming_quality?: string
-    profiles?: any[]
-  }
+  cookieBundles?: CookieBundle[]
+  accounts?: AccountResult[]
+  tokenResults?: TokenResult[]
+  accountInfo?: AccountResult
   loading: boolean
 }
 
-const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading }) => {
-  // Filter out invalid cookies (empty name or value)
+const CookiesList: React.FC<CookiesListProps> = ({
+  cookies,
+  cookieBundles = [],
+  accounts = [],
+  tokenResults = [],
+  accountInfo,
+  loading
+}) => {
   const validCookies = cookies.filter(cookie => cookie.name && cookie.value)
-  const fullCookieHeader = validCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
-  const cookieNameCounts = validCookies.reduce<Record<string, number>>((counts, cookie) => {
-    counts[cookie.name] = (counts[cookie.name] || 0) + 1
-    return counts
-  }, {})
-  const cookieNameSummary = Object.entries(cookieNameCounts)
-    .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
-    .map(([name, count]) => `${name} (${count})`)
-    .join(', ')
+  const accountByBundle = new Map(accounts.map(account => [account.bundle_number, account]))
+  const tokenByBundle = new Map(tokenResults.map(token => [token.bundle_number, token]))
+  const liveBundles = cookieBundles.filter((bundle) => {
+    const account = accountByBundle.get(bundle.bundle_number)
+    const token = tokenByBundle.get(bundle.bundle_number)
+    return Boolean(account?.success || token?.success)
+  })
+  const liveCookieCount = liveBundles.reduce(
+    (count, bundle) => count + bundle.cookies.filter(cookie => cookie.name && cookie.value).length,
+    0
+  )
 
-  const wrapText = (text: string, maxLength: number = 100): string => {
-    const words = text.split(' ')
-    let lines: string[] = []
-    let currentLine = ''
-    
-    words.forEach(word => {
-      if ((currentLine + word).length > maxLength && currentLine) {
-        lines.push(currentLine.trim())
-        currentLine = word
-      } else {
-        currentLine += (currentLine ? ' ' : '') + word
-      }
-    })
-    
-    if (currentLine) {
-      lines.push(currentLine.trim())
-    }
-    
-    return lines.join('\n')
+  const cookieNameSummary = (bundle: CookieBundle) => {
+    const counts = bundle.cookies
+      .filter(cookie => cookie.name && cookie.value)
+      .reduce<Record<string, number>>((result, cookie) => {
+        result[cookie.name] = (result[cookie.name] || 0) + 1
+        return result
+      }, {})
+
+    return Object.entries(counts)
+      .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
+      .map(([name, count]) => `${name} (${count})`)
+      .join(', ')
   }
 
-  const buildAccountInfoBlock = (cookieNumber: number) => {
-    let content = `-Cookie #${cookieNumber}-\n`
-    content += `Email: ${accountInfo?.email || 'N/A'}\n`
-    content += `Country: ${accountInfo?.country || 'N/A'}\n`
-    content += `Plan: ${accountInfo?.plan || 'N/A'}\n`
-    if (accountInfo?.streaming_quality) content += `Streaming Quality: ${accountInfo.streaming_quality}\n`
-    if (accountInfo?.subscription_status) content += `Subscription Status: ${accountInfo.subscription_status}\n`
-    if (accountInfo?.account_created_date) content += `Account Created: ${accountInfo.account_created_date}\n`
-    if (accountInfo?.billing_date) content += `Next Billing Date: ${accountInfo.billing_date}\n`
-    if (accountInfo?.payment_method) content += `Payment Method: ${accountInfo.payment_method}\n`
-    if (accountInfo?.profiles && accountInfo.profiles.length > 0) {
-      content += `Profiles: ${accountInfo.profiles.map((p: any) => p.name).join(', ')}\n`
+  const buildTokenLinks = (token?: TokenResult) => {
+    if (!token?.success || !token.nftoken) {
+      return `Netflix Token Link: ${token?.error || 'Unavailable'}\n`
     }
+
+    const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(token.nftoken)}`
+    const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(token.nftoken)}`
+
+    return [
+      `Netflix Token Link: ${tokenUrl}`,
+      `Open in Netflix: ${tokenUrl}`,
+      `Open in Phone: ${phoneTokenUrl}`,
+    ].join('\n') + '\n'
+  }
+
+  const buildAccountInfoBlock = (
+    bundleNumber: number,
+    account: AccountResult | undefined,
+    token: TokenResult | undefined
+  ) => {
+    const details = account || (bundleNumber === 1 ? accountInfo : undefined)
+    let content = `Cookie #${bundleNumber}\n`
+    content += 'Account info:\n'
+
+    if (details?.success) {
+      content += `Email: ${details.email || 'N/A'}\n`
+      content += `Country: ${details.country || 'N/A'}\n`
+      content += `Plan: ${details.plan || 'N/A'}\n`
+      if (details.streaming_quality) content += `Streaming Quality: ${details.streaming_quality}\n`
+      if (details.subscription_status) content += `Subscription Status: ${details.subscription_status}\n`
+      if (details.account_created_date) content += `Account Created: ${details.account_created_date}\n`
+      if (details.billing_date) content += `Next Billing Date: ${details.billing_date}\n`
+      if (details.payment_method) content += `Payment Method: ${details.payment_method}\n`
+      if (details.profiles && details.profiles.length > 0) {
+        content += `Profiles: ${details.profiles.map(profile => `${profile.name}${profile.isKids ? ' (Kids)' : ''}`).join(', ')}\n`
+      }
+    } else {
+      content += `Status: ${details?.error || 'Live cookie bundle'}\n`
+    }
+
+    content += buildTokenLinks(token)
     return content
   }
 
-  const handleDownloadCookiePackage = (cookieNumber: number) => {
-    let content = ''
+  const handleDownloadLiveCookies = () => {
+    if (liveBundles.length === 0) return
 
-    content += buildAccountInfoBlock(cookieNumber)
-    content += '\n==========================\n'
-    content += wrapText(fullCookieHeader) + '\n'
-    
+    const content = liveBundles.map((bundle) => {
+      const account = accountByBundle.get(bundle.bundle_number)
+      const token = tokenByBundle.get(bundle.bundle_number)
+      const cookieHeader = bundle.cookies
+        .filter(cookie => cookie.name && cookie.value)
+        .map(cookie => `${cookie.name}=${cookie.value}`)
+        .join('; ')
+
+      return `${buildAccountInfoBlock(bundle.bundle_number, account, token)}================\n${cookieHeader}\n`
+    }).join('\n')
+
     const element = document.createElement('a')
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content))
-    element.setAttribute('download', `cookie-${cookieNumber}.txt`)
-    element.style.display = 'none'
-    document.body.appendChild(element)
-    element.click()
-    document.body.removeChild(element)
-  }
-
-  const handleDownloadAll = () => {
-    if (validCookies.length === 0) return
-    
-    let content = ''
-
-    content += buildAccountInfoBlock(1)
-    content += '\n==========================\n'
-    content += wrapText(fullCookieHeader) + '\n'
-    
-    const element = document.createElement('a')
-    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content))
-    element.setAttribute('download', 'netflix-info-all-cookies.txt')
+    element.setAttribute('download', 'netflix-live-cookies.txt')
     element.style.display = 'none'
     document.body.appendChild(element)
     element.click()
@@ -119,46 +158,47 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
     )
   }
 
-  if (validCookies.length === 0) {
+  if (validCookies.length === 0 || liveBundles.length === 0) {
     return null
   }
 
   return (
     <div className="cookies-list">
       <div className="cookies-header">
-        <h3>✅ Checked Cookies ({validCookies.length.toLocaleString()})</h3>
-        <button 
+        <h3>✅ Checked Live Cookies ({liveCookieCount.toLocaleString()})</h3>
+        <button
           className="btn btn-secondary btn-small"
-          onClick={handleDownloadAll}
+          onClick={handleDownloadLiveCookies}
         >
-          📥 Download All Cookies
+          📥 Download Live Cookies ({liveBundles.length})
         </button>
       </div>
 
       <div className="cookies-container">
-        <div className="cookie-item">
-          <div className="cookie-number-badge">#1</div>
-          <div className="cookie-main">
-             <div className="cookie-name">
-               <strong>Complete Cookie Header</strong>
+        {liveBundles.map((bundle) => {
+          const bundleCookies = bundle.cookies.filter(cookie => cookie.name && cookie.value)
+          const cookieHeader = bundleCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
+
+          return (
+            <div className="cookie-item" key={bundle.bundle_number}>
+              <div className="cookie-number-badge">#{bundle.bundle_number}</div>
+              <div className="cookie-main">
+                <div className="cookie-name">
+                  <strong>Live Cookie Bundle #{bundle.bundle_number}</strong>
+                </div>
+                <div className="cookie-value">
+                  <code>{cookieHeader.substring(0, 180)}{cookieHeader.length > 180 ? '...' : ''}</code>
+                </div>
+                <div className="cookie-domain">
+                  Records included: <code>{bundleCookies.length.toLocaleString()}</code>
+                </div>
+                <div className="cookie-domain">
+                  Cookie names detected: <code>{cookieNameSummary(bundle)}</code>
+                </div>
+              </div>
             </div>
-            <div className="cookie-value">
-              <code>{fullCookieHeader.substring(0, 180)}{fullCookieHeader.length > 180 ? '...' : ''}</code>
-            </div>
-            <div className="cookie-domain">
-               Records included: <code>{validCookies.length.toLocaleString()}</code>
-             </div>
-             <div className="cookie-domain">
-               Cookie names detected: <code>{cookieNameSummary}</code>
-            </div>
-          </div>
-          <button
-            className="btn btn-primary btn-small"
-            onClick={() => handleDownloadCookiePackage(1)}
-          >
-            ⬇️ Download
-          </button>
-        </div>
+          )
+        })}
       </div>
     </div>
   )

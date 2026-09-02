@@ -9,6 +9,7 @@ import AccountInfo from './components/AccountInfo'
 function App() {
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
+  const [cookieBundles, setCookieBundles] = useState<any[]>([])
   const [tokenResults, setTokenResults] = useState<any[]>([])
   const [accountInfo, setAccountInfo] = useState<any>(null)
   const [accountInfoError, setAccountInfoError] = useState('')
@@ -18,6 +19,7 @@ function App() {
     setAccountInfoError('')
     setAccountInfo(null)
     setTokenResults([])
+    setCookieBundles([])
     setCookies([])
     
     try {
@@ -64,6 +66,9 @@ function App() {
       if (tokenResponse.data.cookies && Array.isArray(tokenResponse.data.cookies)) {
         setCookies(tokenResponse.data.cookies)
       }
+      if (tokenResponse.data.cookie_bundles && Array.isArray(tokenResponse.data.cookie_bundles)) {
+        setCookieBundles(tokenResponse.data.cookie_bundles)
+      }
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to process request'
       setAccountInfoError(errorMessage)
@@ -108,6 +113,9 @@ function App() {
 
             <CookiesList
               cookies={cookies}
+              cookieBundles={cookieBundles}
+              accounts={accountInfo?.accounts}
+              tokenResults={tokenResults}
               accountInfo={accountInfo}
               loading={loading}
             />

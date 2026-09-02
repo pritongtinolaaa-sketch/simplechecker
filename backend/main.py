@@ -64,6 +64,7 @@ class NetflixTokenResponse(BaseModel):
     nftoken: Optional[str] = None
     error: Optional[str] = None
     cookies: List[Cookie] = []
+    cookie_bundles: List[dict] = []
     cookie_count: int = 0
     tokens: List[dict] = []
     token_count: int = 0
@@ -985,6 +986,13 @@ async def generate_netflix_token(
             result for result in token_results
             if result.get("success") and result.get("nftoken")
         ]
+        cookie_bundles = [
+            {
+                "bundle_number": index,
+                "cookies": [cookie.model_dump() for cookie in bundle_cookies],
+            }
+            for index, (bundle_cookies, _) in enumerate(bundles, 1)
+        ]
         first_token = successful_tokens[0] if successful_tokens else {}
         total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
         error = None
@@ -998,6 +1006,7 @@ async def generate_netflix_token(
             nftoken=first_token.get("nftoken"),
             error=error,
             cookies=cookies,
+            cookie_bundles=cookie_bundles,
             cookie_count=total_cookies,
             tokens=token_results,
             token_count=len(successful_tokens),
