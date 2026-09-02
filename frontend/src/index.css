@@ -452,6 +452,13 @@ body {
   color: white;
 }
 
+.badge-checking {
+  background-color: rgba(0, 233, 255, 0.1);
+  color: #9cefff;
+  border: 1px solid rgba(0, 233, 255, 0.45);
+  box-shadow: 0 0 10px rgba(0, 233, 255, 0.12);
+}
+
 .badge-default {
   background-color: transparent;
   color: var(--text-color);

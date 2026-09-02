@@ -309,7 +309,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           📊 Live Account Information
           {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
-        <span className="badge badge-success">
+        <span className={`badge ${loading ? 'badge-checking' : 'badge-success'}`}>
           {hasAccountResults
             ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
             : '✓ Retrieved'}
