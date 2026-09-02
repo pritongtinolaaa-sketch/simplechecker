@@ -6,7 +6,27 @@ interface Profile {
   guid: string
 }
 
+interface AccountResult {
+  bundle_number: number
+  cookie_count: number
+  success: boolean
+  email?: string
+  country?: string
+  plan?: string
+  subscription_status?: string
+  billing_date?: string
+  account_created_date?: string
+  payment_method?: string
+  streaming_quality?: string
+  profiles?: Profile[]
+  error?: string
+}
+
 interface AccountInfoProps {
+  accounts?: AccountResult[]
+  accountCount?: number
+  bundleCount?: number
+  checkedCookieCount?: number
   email?: string
   country?: string
   plan?: string
@@ -21,6 +41,10 @@ interface AccountInfoProps {
 }
 
 const AccountInfo: React.FC<AccountInfoProps> = ({
+  accounts,
+  accountCount,
+  bundleCount,
+  checkedCookieCount,
   email,
   country,
   plan,
@@ -42,100 +66,94 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     )
   }
 
-  if (error) {
-    return (
-      <div className="account-info error">
-        <h2>📊 Account Information</h2>
-        <div className="alert alert-error">
-          <strong>Error:</strong> {error}
-        </div>
-      </div>
-    )
+  const hasAccountResults = Boolean(accounts && accounts.length > 0)
+  const fallbackAccount: AccountResult = {
+    bundle_number: 1,
+    cookie_count: checkedCookieCount || 0,
+    success: true,
+    email,
+    country,
+    plan,
+    subscription_status: subscriptionStatus,
+    billing_date: billingDate,
+    account_created_date: accountCreatedDate,
+    payment_method: paymentMethod,
+    streaming_quality: streamingQuality,
+    profiles
   }
+  const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount]
+  const successfulAccountCount = accountResults.filter(account => account.success).length
+  const totalAccountCount = accountCount ?? accountResults.length
 
-  if (!email && !country && !plan && !billingDate && !paymentMethod) {
-    return (
-      <div className="account-info empty">
-        <h2>📊 Account Information</h2>
-        <p>Click "Get Netflix Info" to extract account details from cookies.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="account-info">
-      <div className="info-header">
-        <h2>📊 Account Information</h2>
-        <span className="badge badge-success">✓ Retrieved</span>
-      </div>
-
+  const renderAccountDetails = (account: AccountResult) => (
+    <>
       <div className="info-grid">
-        {email && (
+        {account.email && (
           <div className="info-item">
             <div className="info-label">Email</div>
-            <div className="info-value">{email}</div>
+            <div className="info-value">{account.email}</div>
           </div>
         )}
 
-        {country && (
+        {account.country && (
           <div className="info-item">
             <div className="info-label">Country</div>
-            <div className="info-value">{country}</div>
+            <div className="info-value">{account.country}</div>
           </div>
         )}
 
-        {plan && (
+        {account.plan && (
           <div className="info-item">
             <div className="info-label">Plan</div>
-            <div className="info-value">{plan}</div>
+            <div className="info-value">{account.plan}</div>
           </div>
         )}
 
-        {streamingQuality && (
+        {account.streaming_quality && (
           <div className="info-item">
             <div className="info-label">Streaming Quality</div>
-            <div className="info-value">{streamingQuality}</div>
+            <div className="info-value">{account.streaming_quality}</div>
           </div>
         )}
 
-        {accountCreatedDate && (
+        {account.account_created_date && (
           <div className="info-item">
             <div className="info-label">Account Created</div>
-            <div className="info-value">{accountCreatedDate}</div>
+            <div className="info-value">{account.account_created_date}</div>
           </div>
         )}
 
-        {billingDate && (
+        {account.billing_date && (
           <div className="info-item">
             <div className="info-label">Next Billing Date</div>
-            <div className="info-value">{billingDate}</div>
+            <div className="info-value">{account.billing_date}</div>
           </div>
         )}
 
-        {paymentMethod && (
+        {account.payment_method && (
           <div className="info-item">
             <div className="info-label">Payment Method</div>
-            <div className="info-value">{paymentMethod}</div>
+            <div className="info-value">{account.payment_method}</div>
           </div>
         )}
 
-        {subscriptionStatus && (
+        {account.subscription_status && (
           <div className="info-item">
             <div className="info-label">Subscription Status</div>
             <div className="info-value">
-              <span className={`status-badge ${subscriptionStatus.toLowerCase()}`}>
-                {subscriptionStatus}
+              <span className={`status-badge ${account.subscription_status.toLowerCase()}`}>
+                {account.subscription_status}
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {profiles && profiles.length > 0 && (
+      {account.profiles && account.profiles.length > 0 && (
         <div className="profiles-section">
-          <h3>Profiles ({profiles.length})</h3>
+          <h3>Profiles ({account.profiles.length})</h3>
           <div className="profiles-list">
-            {profiles.map((profile, idx) => (
+            {account.profiles.map((profile, idx) => (
               <div key={idx} className="profile-card">
                 <div className="profile-icon">
                   {profile.isKids ? '👶' : '👤'}
@@ -151,6 +169,71 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           </div>
         </div>
       )}
+    </>
+  )
+
+  if (error && !hasAccountResults) {
+    return (
+      <div className="account-info error">
+        <h2>📊 Account Information</h2>
+        <div className="alert alert-error">
+          <strong>Error:</strong> {error}
+        </div>
+      </div>
+    )
+  }
+
+  if (!hasAccountResults && !email && !country && !plan && !billingDate && !paymentMethod) {
+    return (
+      <div className="account-info empty">
+        <h2>📊 Account Information</h2>
+        <p>Click "Get Netflix Info" to extract account details from cookies.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="account-info">
+      <div className="info-header">
+        <h2>
+          📊 Live Account Information
+          {hasAccountResults && ` (${successfulAccountCount}/${totalAccountCount})`}
+        </h2>
+        <span className="badge badge-success">
+          {hasAccountResults ? `${successfulAccountCount} Retrieved` : '✓ Retrieved'}
+        </span>
+      </div>
+
+      {hasAccountResults && (
+        <p className="account-summary">
+          Checked {bundleCount?.toLocaleString() || totalAccountCount.toLocaleString()} cookie bundles
+          {checkedCookieCount ? ` containing ${checkedCookieCount.toLocaleString()} cookies` : ''}.
+        </p>
+      )}
+
+      <div className="account-results">
+        {accountResults.map((account) => (
+          <div
+            key={account.bundle_number}
+            className={`account-result ${account.success ? '' : 'failed'}`}
+          >
+            <div className="account-result-header">
+              <h3>Cookie Bundle #{account.bundle_number}</h3>
+              <span className={`badge ${account.success ? 'badge-success' : 'badge-default'}`}>
+                {account.success ? '✓ Live' : 'Unavailable'}
+              </span>
+            </div>
+
+            {account.success ? (
+              renderAccountDetails(account)
+            ) : (
+              <div className="alert alert-error">
+                <strong>Error:</strong> {account.error || 'Could not extract account information'}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

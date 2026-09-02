@@ -516,6 +516,55 @@ body {
   margin: 0;
 }
 
+.account-summary {
+  margin: -0.35rem 0 1rem;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.account-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 900px;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.account-result {
+  padding: 1rem;
+  border: 1px solid rgba(0, 233, 255, 0.22);
+  border-radius: var(--border-radius);
+  background: rgba(7, 14, 28, 0.45);
+}
+
+.account-result.failed {
+  border-color: rgba(255, 64, 129, 0.28);
+}
+
+.account-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.account-result-header h3 {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: 1rem;
+}
+
+.account-result .info-grid {
+  margin-bottom: 0.85rem;
+}
+
+.account-result .profiles-section h3 {
+  font-size: 0.95rem;
+}
+
 .info-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

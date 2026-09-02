@@ -65,6 +65,9 @@ class NetflixTokenResponse(BaseModel):
     error: Optional[str] = None
     cookies: List[Cookie] = []
     cookie_count: int = 0
+    tokens: List[dict] = []
+    token_count: int = 0
+    bundle_count: int = 0
 
 class NetflixAccountInfo(BaseModel):
     success: bool
@@ -78,6 +81,10 @@ class NetflixAccountInfo(BaseModel):
     payment_method: Optional[str] = None
     streaming_quality: Optional[str] = None
     error: Optional[str] = None
+    accounts: List[dict] = []
+    account_count: int = 0
+    bundle_count: int = 0
+    checked_cookie_count: int = 0
 
 # Cookie Parsing Functions
 COMPACT_NETFLIX_COOKIE_NAMES = (
@@ -250,6 +257,42 @@ def parse_cookies_auto(text: str) -> tuple[List[Cookie], List[str]]:
             return cookies, errors
     
     return parse_netscape_cookies(text)
+
+
+def parse_cookie_bundles(
+    text: str,
+    format_type: str,
+) -> tuple[List[tuple[List[Cookie], List[str]]], List[str]]:
+    """Parse cookie sets separately when an export includes separator lines."""
+    format_type = format_type.lower()
+
+    if format_type == "json":
+        cookies, errors = parse_json_cookies(text)
+        return ([(cookies, errors)] if cookies else []), errors
+
+    if format_type == "auto" and text.lstrip().startswith(("[", "{")):
+        cookies, errors = parse_json_cookies(text)
+        return ([(cookies, errors)] if cookies else []), errors
+
+    if format_type not in ("auto", "netscape"):
+        raise ValueError("Invalid format_type. Must be 'netscape', 'json', or 'auto'")
+
+    raw_bundles = re.split(r"(?m)^\s*=+\s*$", text)
+    if len(raw_bundles) == 1:
+        cookies, errors = parse_netscape_cookies(text)
+        return ([(cookies, errors)] if cookies else []), errors
+
+    bundles = []
+    all_errors = []
+    for raw_bundle in raw_bundles:
+        if not raw_bundle.strip():
+            continue
+        cookies, errors = parse_netscape_cookies(raw_bundle)
+        if cookies:
+            bundles.append((cookies, errors))
+        all_errors.extend(errors)
+
+    return bundles, all_errors
 
 # Netflix Token Generation Functions
 
@@ -865,26 +908,68 @@ async def generate_netflix_token(
                 error="No cookies parsed from input"
             )
         
-        # Convert cookies list to dict for processing
-        cookies_dict = {cookie.name: cookie.value for cookie in cookies}
-        
-        # Use Playwright if requested or if only partial cookies provided
-        if request.use_playwright:
-            logger.info("Using Playwright to get full cookie header...")
-            cookies_dict, playwright_error = await get_browser_cookies_with_playwright(cookies_dict)
-            if playwright_error:
-                logger.warning(f"Playwright error: {playwright_error}")
-                # Continue anyway with the original cookies
-        
-        # Generate Netflix token
-        success, token, error = await generate_nftoken(cookies_dict)
+        bundles, bundle_errors = parse_cookie_bundles(request.cookies_text, format_type)
+        if not bundles:
+            return NetflixTokenResponse(
+                success=False,
+                error="No cookie bundles parsed from input"
+            )
+
+        async def generate_bundle_token(bundle_number: int, bundle_cookies: List[Cookie]) -> dict:
+            cookies_dict = {cookie.name: cookie.value for cookie in bundle_cookies}
+            has_netflix_id = any(name.lower() == "netflixid" for name in cookies_dict)
+            if not has_netflix_id:
+                return {
+                    "bundle_number": bundle_number,
+                    "success": False,
+                    "error": "Missing required cookie (NetflixId)",
+                    "cookie_count": len(bundle_cookies),
+                }
+
+            # Playwright is useful for a single partial export, but launching a
+            # browser for every bundle would make large imports impractical.
+            if request.use_playwright and len(bundles) == 1:
+                logger.info("Using Playwright to get full cookie header...")
+                browser_cookies, playwright_error = await get_browser_cookies_with_playwright(cookies_dict)
+                if not playwright_error:
+                    cookies_dict = browser_cookies
+                else:
+                    logger.warning(f"Playwright error: {playwright_error}")
+
+            success, token, error = await generate_nftoken(cookies_dict)
+            return {
+                "bundle_number": bundle_number,
+                "success": success,
+                "nftoken": token,
+                "error": error,
+                "cookie_count": len(bundle_cookies),
+            }
+
+        token_results = await asyncio.gather(*[
+            generate_bundle_token(index, bundle_cookies)
+            for index, (bundle_cookies, _) in enumerate(bundles, 1)
+        ])
+        successful_tokens = [
+            result for result in token_results
+            if result.get("success") and result.get("nftoken")
+        ]
+        first_token = successful_tokens[0] if successful_tokens else {}
+        total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
+        error = None
+        if not successful_tokens:
+            error = "No usable Netflix tokens were generated from the cookie bundles."
+            if bundle_errors:
+                error = bundle_errors[0]
         
         return NetflixTokenResponse(
-            success=success,
-            nftoken=token,
+            success=bool(successful_tokens),
+            nftoken=first_token.get("nftoken"),
             error=error,
             cookies=cookies,
-            cookie_count=len(cookies)
+            cookie_count=total_cookies,
+            tokens=token_results,
+            token_count=len(successful_tokens),
+            bundle_count=len(bundles),
         )
     
     except HTTPException:
@@ -926,30 +1011,88 @@ async def get_account_info(
                 error="No cookies parsed from input"
             )
         
-        # Convert cookies list to dict for processing
-        cookies_dict = {cookie.name: cookie.value for cookie in cookies}
-        
-        # Get account information
-        success, account_info, error = await get_netflix_account_info(cookies_dict)
-        
-        if success and account_info:
-            return NetflixAccountInfo(
-                success=True,
-                email=account_info.get('email'),
-                country=account_info.get('country'),
-                plan=account_info.get('plan'),
-                subscription_status=account_info.get('subscription_status'),
-                billing_date=account_info.get('billing_date'),
-                account_created_date=account_info.get('account_created_date'),
-                payment_method=account_info.get('payment_method'),
-                streaming_quality=account_info.get('streaming_quality'),
-                profiles=account_info.get('profiles')
-            )
-        else:
+        bundles, bundle_errors = parse_cookie_bundles(request.cookies_text, format_type)
+        if not bundles:
             return NetflixAccountInfo(
                 success=False,
-                error=error or "Failed to extract account information"
+                error="No cookie bundles parsed from input"
             )
+
+        lookup_semaphore = asyncio.Semaphore(4)
+
+        async def lookup_bundle(bundle_number: int, bundle_cookies: List[Cookie]) -> dict:
+            result = {
+                "bundle_number": bundle_number,
+                "cookie_count": len(bundle_cookies),
+                "success": False,
+            }
+            cookies_dict = {cookie.name: cookie.value for cookie in bundle_cookies}
+            if not any(name.lower() == "netflixid" for name in cookies_dict):
+                result["error"] = "Missing required cookie (NetflixId)"
+                return result
+
+            async with lookup_semaphore:
+                try:
+                    success, account_info, error = await asyncio.wait_for(
+                        get_netflix_account_info(cookies_dict),
+                        timeout=60,
+                    )
+                except asyncio.TimeoutError:
+                    success, account_info, error = (
+                        False,
+                        None,
+                        "Account lookup timed out",
+                    )
+
+            result["success"] = success and bool(account_info)
+            if account_info:
+                result.update({
+                    "email": account_info.get("email"),
+                    "country": account_info.get("country"),
+                    "plan": account_info.get("plan"),
+                    "subscription_status": account_info.get("subscription_status"),
+                    "billing_date": account_info.get("billing_date"),
+                    "account_created_date": account_info.get("account_created_date"),
+                    "payment_method": account_info.get("payment_method"),
+                    "streaming_quality": account_info.get("streaming_quality"),
+                    "profiles": account_info.get("profiles"),
+                })
+            if error:
+                result["error"] = error
+            return result
+
+        account_results = await asyncio.gather(*[
+            lookup_bundle(index, bundle_cookies)
+            for index, (bundle_cookies, _) in enumerate(bundles, 1)
+        ])
+        successful_accounts = [
+            result for result in account_results if result.get("success")
+        ]
+        first_account = successful_accounts[0] if successful_accounts else {}
+        total_cookies = sum(len(bundle_cookies) for bundle_cookies, _ in bundles)
+        error = None
+        if not successful_accounts:
+            error = "Could not extract account information from the cookie bundles."
+            if bundle_errors:
+                error = bundle_errors[0]
+
+        return NetflixAccountInfo(
+            success=bool(successful_accounts),
+            email=first_account.get("email"),
+            country=first_account.get("country"),
+            plan=first_account.get("plan"),
+            subscription_status=first_account.get("subscription_status"),
+            billing_date=first_account.get("billing_date"),
+            account_created_date=first_account.get("account_created_date"),
+            payment_method=first_account.get("payment_method"),
+            streaming_quality=first_account.get("streaming_quality"),
+            profiles=first_account.get("profiles"),
+            error=error,
+            accounts=account_results,
+            account_count=len(account_results),
+            bundle_count=len(bundles),
+            checked_cookie_count=total_cookies,
+        )
     
     except HTTPException:
         raise

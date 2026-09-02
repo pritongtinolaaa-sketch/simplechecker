@@ -10,7 +10,7 @@ import AccountInfo from './components/AccountInfo'
 function App() {
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
-  const [netflixToken, setNetflixToken] = useState<string | null>(null)
+  const [tokenResults, setTokenResults] = useState<any[]>([])
   const [tokenError, setTokenError] = useState('')
   const [accountInfo, setAccountInfo] = useState<any>(null)
   const [accountInfoError, setAccountInfoError] = useState('')
@@ -20,7 +20,7 @@ function App() {
     setAccountInfoError('')
     setTokenError('')
     setAccountInfo(null)
-    setNetflixToken(null)
+    setTokenResults([])
     setCookies([])
     
     try {
@@ -39,15 +39,29 @@ function App() {
       ])
       
       // Handle account info response
-      if (accountResponse.data.success) {
+      if (accountResponse.data.accounts?.length) {
+        setAccountInfo(accountResponse.data)
+        if (!accountResponse.data.success) {
+          setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
+        }
+      } else if (accountResponse.data.success) {
         setAccountInfo(accountResponse.data)
       } else {
         setAccountInfoError(accountResponse.data.error || 'Failed to extract account information')
       }
       
       // Handle token response and extract cookies
-      if (tokenResponse.data.success && tokenResponse.data.nftoken) {
-        setNetflixToken(tokenResponse.data.nftoken)
+      if (tokenResponse.data.tokens?.length) {
+        setTokenResults(tokenResponse.data.tokens)
+        if (!tokenResponse.data.success) {
+          setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
+        }
+      } else if (tokenResponse.data.success && tokenResponse.data.nftoken) {
+        setTokenResults([{
+          bundle_number: 1,
+          success: true,
+          nftoken: tokenResponse.data.nftoken
+        }])
       } else {
         setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
       }
@@ -81,6 +95,10 @@ function App() {
 
           <div className="app-section">
             <AccountInfo
+              accounts={accountInfo?.accounts}
+              accountCount={accountInfo?.account_count}
+              bundleCount={accountInfo?.bundle_count}
+              checkedCookieCount={accountInfo?.checked_cookie_count}
               email={accountInfo?.email}
               country={accountInfo?.country}
               plan={accountInfo?.plan}
@@ -94,9 +112,9 @@ function App() {
               loading={loading}
             />
 
-            {netflixToken && (
+            {tokenResults.length > 0 && (
               <NetflixToken
-                token={netflixToken}
+                tokens={tokenResults}
                 error={tokenError}
               />
             )}
