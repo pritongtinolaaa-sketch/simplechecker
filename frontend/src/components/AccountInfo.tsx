@@ -66,16 +66,18 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   error,
   loading
 }) => {
-  if (loading) {
+  const hasAccountResults = Boolean(accounts && accounts.length > 0)
+  const hasPartialResults = hasAccountResults || Boolean(tokenResults && tokenResults.length > 0)
+
+  if (loading && !hasPartialResults) {
     return (
       <div className="account-info loading">
         <h2>📊 Account Information</h2>
-        <p>Loading account details...</p>
+        <p>Starting cookie bundle checks...</p>
       </div>
     )
   }
 
-  const hasAccountResults = Boolean(accounts && accounts.length > 0)
   const fallbackAccount: AccountResult = {
     bundle_number: 1,
     cookie_count: checkedCookieCount || 0,
@@ -308,7 +310,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
         <span className="badge badge-success">
-          {hasAccountResults ? `${liveAccountResults.length} Live` : '✓ Retrieved'}
+          {hasAccountResults
+            ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
+            : '✓ Retrieved'}
         </span>
       </div>
 
@@ -316,6 +320,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         <p className="account-summary">
           Checked {bundleCount?.toLocaleString() || totalAccountCount.toLocaleString()} cookie bundles
           {checkedCookieCount ? ` containing ${checkedCookieCount.toLocaleString()} cookies` : ''}.
+          {loading && ' Live results appear here as each bundle finishes.'}
         </p>
       )}
 
