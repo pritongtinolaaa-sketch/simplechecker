@@ -297,33 +297,11 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     )
   }
 
-  const renderAccountResult = (account: AccountResult) => {
+  const renderAccountResult = (account: AccountResult, collapsible = false) => {
     const bundleIsLive = isBundleLive(account)
     const tokenResult = tokenByBundle.get(account.bundle_number)
-
-    return (
-      <div
-        key={account.bundle_number}
-        className={`account-result ${bundleIsLive ? '' : 'failed'}`}
-      >
-        <div className="account-result-header">
-          <h3>Cookie Bundle #{account.bundle_number}</h3>
-          <div className="account-result-actions">
-            <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
-              {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
-            </span>
-            {bundleIsLive && cookieBundleByNumber.has(account.bundle_number) && (
-              <button
-                className="btn btn-secondary btn-small bundle-download-btn"
-                onClick={() => downloadBundle(cookieBundleByNumber.get(account.bundle_number)!)}
-                title={`Download Cookie Bundle #${account.bundle_number}`}
-              >
-                <><Icon name="download" /> Download</>
-              </button>
-            )}
-          </div>
-        </div>
-
+    const accountContent = (
+      <>
         {account.success ? (
           renderAccountDetails(account)
         ) : bundleIsLive ? (
@@ -338,6 +316,72 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         )}
 
         {tokenResult && renderBundleToken(tokenResult)}
+      </>
+    )
+    const downloadButton = bundleIsLive && cookieBundleByNumber.has(account.bundle_number) && (
+      <button
+        className="btn btn-secondary btn-small bundle-download-btn"
+        onClick={(event) => {
+          event.stopPropagation()
+          downloadBundle(cookieBundleByNumber.get(account.bundle_number)!)
+        }}
+        title={`Download Cookie Bundle #${account.bundle_number}`}
+      >
+        <><Icon name="download" /> Download</>
+      </button>
+    )
+
+    if (collapsible) {
+      return (
+        <details
+          key={account.bundle_number}
+          className={`account-result account-result-collapsible ${bundleIsLive ? '' : 'failed'}`}
+        >
+          <summary className="account-result-header">
+            <div className="account-result-summary-main">
+              <h3>Cookie Bundle #{account.bundle_number}</h3>
+              <div className="account-result-summary-fields">
+                {account.email && (
+                  <span><strong>Email</strong>{account.email}</span>
+                )}
+                {account.country && (
+                  <span><strong>Country</strong>{account.country}</span>
+                )}
+                {account.plan && (
+                  <span><strong>Plan</strong>{account.plan}</span>
+                )}
+              </div>
+            </div>
+            <div className="account-result-actions">
+              <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
+                {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
+              </span>
+              {downloadButton}
+            </div>
+          </summary>
+          <div className="account-result-content">
+            {accountContent}
+          </div>
+        </details>
+      )
+    }
+
+    return (
+      <div
+        key={account.bundle_number}
+        className={`account-result ${bundleIsLive ? '' : 'failed'}`}
+      >
+        <div className="account-result-header">
+          <h3>Cookie Bundle #{account.bundle_number}</h3>
+          <div className="account-result-actions">
+            <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
+              {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
+            </span>
+            {downloadButton}
+          </div>
+        </div>
+
+        {accountContent}
       </div>
     )
   }
@@ -398,10 +442,10 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         <section className="account-group live-account-group">
           <div className="account-group-header">
             <h3>Working / Live Cookies ({liveAccountResults.length})</h3>
-            <span>Ready to use</span>
+            <span>Click a bundle to expand</span>
           </div>
           <div className="account-results">
-            {liveAccountResults.map(renderAccountResult)}
+            {liveAccountResults.map((account) => renderAccountResult(account, true))}
           </div>
         </section>
       )}
@@ -413,7 +457,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             <span>Not working</span>
           </summary>
           <div className="account-results">
-            {invalidAccountResults.map(renderAccountResult)}
+            {invalidAccountResults.map((account) => renderAccountResult(account))}
           </div>
         </details>
       )}

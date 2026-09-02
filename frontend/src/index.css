@@ -870,6 +870,72 @@ body {
   margin-bottom: 0.85rem;
 }
 
+.account-result-collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.account-result-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-result-collapsible > summary.account-result-header {
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.account-result-collapsible[open] > summary.account-result-header {
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--bundle-accent) 28%, transparent);
+}
+
+.account-result-collapsible > summary::after {
+  content: '▸';
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--bundle-accent);
+  font-size: 1.1rem;
+  transition: transform 0.2s ease;
+}
+
+.account-result-collapsible[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.account-result-summary-main {
+  min-width: 0;
+}
+
+.account-result-summary-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  margin-top: 0.25rem;
+  color: rgba(217, 250, 255, 0.86);
+  font-size: 0.82rem;
+}
+
+.account-result-summary-fields span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-result-summary-fields strong {
+  margin-right: 0.3rem;
+  color: var(--bundle-accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.account-result-content {
+  min-width: 0;
+}
+
 .account-result-header h3 {
   margin: 0;
   color: var(--bundle-accent);
@@ -887,6 +953,11 @@ body {
 
 .account-result .info-item {
   border-color: color-mix(in srgb, var(--bundle-accent) 28%, transparent);
+}
+
+.account-result-collapsible .account-result-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .account-result .profiles-section h3 {
