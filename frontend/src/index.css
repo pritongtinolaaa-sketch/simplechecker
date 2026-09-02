@@ -547,6 +547,29 @@ body {
   border-bottom-color: rgba(255, 64, 129, 0.35);
 }
 
+.invalid-account-group {
+  margin-top: 2.25rem;
+  padding: 1rem 1rem 0;
+  border: 2px solid rgba(255, 59, 92, 0.5);
+  border-radius: 12px;
+  background: rgba(92, 12, 35, 0.2);
+  box-shadow: 0 0 24px rgba(255, 59, 92, 0.12);
+}
+
+.invalid-account-group[open] {
+  padding-bottom: 1rem;
+}
+
+.invalid-account-group > summary.account-group-header {
+  margin-bottom: 0;
+  padding-bottom: 0.75rem;
+  border-bottom-width: 2px;
+}
+
+.invalid-account-group[open] > summary.account-group-header {
+  margin-bottom: 1rem;
+}
+
 .invalid-account-group .account-group-header h3 {
   color: #ff6b9c;
 }
