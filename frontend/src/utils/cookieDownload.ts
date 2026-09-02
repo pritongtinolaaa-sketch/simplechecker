@@ -23,14 +23,38 @@ export interface DownloadAccount {
   error?: string
 }
 
+export interface DownloadToken {
+  success: boolean
+  nftoken?: string
+  error?: string
+}
+
 export interface DownloadBundle {
   bundle_number: number
   cookies: DownloadCookie[]
 }
 
+const buildTokenLinks = (token?: DownloadToken) => {
+  if (!token?.success || !token.nftoken) {
+    return [
+      `Open in Netflix: ${token?.error || 'Unavailable'}`,
+      `Open in Phone: ${token?.error || 'Unavailable'}`,
+    ].join('\n\n') + '\n'
+  }
+
+  const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(token.nftoken)}`
+  const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(token.nftoken)}`
+
+  return [
+    `Open in Netflix: ${tokenUrl}`,
+    `Open in Phone: ${phoneTokenUrl}`,
+  ].join('\n\n') + '\n'
+}
+
 export const buildCookieDownloadContent = (
   bundle: DownloadBundle,
   account?: DownloadAccount,
+  token?: DownloadToken,
   accountInfo?: DownloadAccount
 ) => {
   const details = account || (bundle.bundle_number === 1 ? accountInfo : undefined)
@@ -53,6 +77,8 @@ export const buildCookieDownloadContent = (
     content += `Status: ${details?.error || 'Live cookie bundle'}\n`
   }
 
+  content += '\n'
+  content += buildTokenLinks(token)
   content += '\n'
 
   const cookieHeader = bundle.cookies
