@@ -138,7 +138,7 @@ const CookiesList: React.FC<CookiesListProps> = ({
         .map(cookie => `${cookie.name}=${cookie.value}`)
         .join('; ')
 
-      return `${buildAccountInfoBlock(bundle.bundle_number, account, token)}================\n${cookieHeader}\n`
+      return `${buildAccountInfoBlock(bundle.bundle_number, account, token)}================\n${cookieHeader}\n================\n`
     }).join('\n')
 
     const element = document.createElement('a')
