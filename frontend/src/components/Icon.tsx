@@ -10,6 +10,7 @@ export type IconName =
   | 'external'
   | 'film'
   | 'phone'
+  | 'upload'
   | 'user'
 
 interface IconProps {
@@ -90,6 +91,13 @@ const Icon: React.FC<IconProps> = ({ name, size = 16, className }) => {
           <rect x="7" y="2.5" width="10" height="19" rx="2" />
           <path d="M10 5h4" />
           <path d="M11 18.5h2" />
+        </>
+      )}
+      {name === 'upload' && (
+        <>
+          <path d="M12 16V4" />
+          <path d="m7 9 5-5 5 5" />
+          <path d="M5 20h14" />
         </>
       )}
       {name === 'user' && (

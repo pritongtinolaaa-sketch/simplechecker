@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import Icon from './Icon'
 
 interface CookieFormProps {
@@ -19,6 +19,8 @@ const CookieForm: React.FC<CookieFormProps> = ({
   progress
 }) => {
   const [cookiesText, setCookiesText] = useState('')
+  const [selectedFileName, setSelectedFileName] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,6 +31,19 @@ const CookieForm: React.FC<CookieFormProps> = ({
 
   const handleClear = () => {
     setCookiesText('')
+    setSelectedFileName('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const fileText = await file.text()
+    setCookiesText(fileText)
+    setSelectedFileName(file.name)
   }
 
   return (
@@ -41,11 +56,31 @@ const CookieForm: React.FC<CookieFormProps> = ({
           id="cookies"
           className="cookies-textarea"
           value={cookiesText}
-          onChange={(e) => setCookiesText(e.target.value)}
+          onChange={(e) => {
+            setCookiesText(e.target.value)
+            setSelectedFileName('')
+          }}
           placeholder="Paste Netflix cookies, JSON, or a Netflix Account Details export..."
           disabled={loading}
           rows={12}
         />
+        <div className="file-upload-row">
+          <label className="btn btn-secondary file-upload-button">
+            <Icon name="upload" /> Upload .txt File
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,text/plain"
+              onChange={handleFileUpload}
+              disabled={loading}
+            />
+          </label>
+          {selectedFileName && (
+            <span className="file-upload-name" title={selectedFileName}>
+              {selectedFileName}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="form-actions">
