@@ -880,7 +880,11 @@ body {
 }
 
 .account-result-collapsible > summary.account-result-header {
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.55rem;
   margin-bottom: 0;
 }
 
@@ -892,6 +896,8 @@ body {
 
 .account-result-collapsible > summary::after {
   content: '▸';
+  grid-column: 3;
+  grid-row: 1;
   flex: 0 0 auto;
   align-self: center;
   color: var(--bundle-accent);
@@ -904,21 +910,24 @@ body {
 }
 
 .account-result-summary-main {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
 }
 
 .account-result-summary-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.9rem;
-  margin-top: 0.25rem;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  grid-template-columns: minmax(0, 1.35fr) minmax(90px, 0.7fr) minmax(0, 1.5fr);
+  gap: 0.35rem 1rem;
+  min-width: 0;
   color: rgba(217, 250, 255, 0.86);
   font-size: 0.82rem;
 }
 
 .account-result-summary-fields span {
   min-width: 0;
-  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -956,8 +965,11 @@ body {
 }
 
 .account-result-collapsible .account-result-actions {
+  grid-column: 2;
+  grid-row: 1;
   flex: 0 0 auto;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .account-result .profiles-section h3 {
@@ -1478,6 +1490,27 @@ body {
 
 @media (max-width: 540px) {
   .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-result-collapsible > summary.account-result-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .account-result-collapsible > summary::after {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .account-result-collapsible .account-result-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .account-result-collapsible .account-result-summary-fields {
+    grid-column: 1 / -1;
+    grid-row: 3;
     grid-template-columns: 1fr;
   }
 }

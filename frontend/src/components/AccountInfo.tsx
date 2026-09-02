@@ -340,23 +340,23 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           <summary className="account-result-header">
             <div className="account-result-summary-main">
               <h3>Cookie Bundle #{account.bundle_number}</h3>
-              <div className="account-result-summary-fields">
-                {account.email && (
-                  <span><strong>Email</strong>{account.email}</span>
-                )}
-                {account.country && (
-                  <span><strong>Country</strong>{account.country}</span>
-                )}
-                {account.plan && (
-                  <span><strong>Plan</strong>{account.plan}</span>
-                )}
-              </div>
             </div>
             <div className="account-result-actions">
               <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
                 {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
               </span>
               {downloadButton}
+            </div>
+            <div className="account-result-summary-fields">
+              {account.email && (
+                <span><strong>Email</strong>{account.email}</span>
+              )}
+              {account.country && (
+                <span><strong>Country</strong>{account.country}</span>
+              )}
+              {account.plan && (
+                <span><strong>Plan</strong>{account.plan}</span>
+              )}
             </div>
           </summary>
           <div className="account-result-content">
