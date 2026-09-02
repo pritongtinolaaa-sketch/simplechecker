@@ -301,6 +301,22 @@ body {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  padding: 0.35rem;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  transition: var(--transition);
+}
+
+.file-upload-row.is-dragging {
+  border-color: rgba(0, 233, 255, 0.8);
+  background: rgba(0, 233, 255, 0.08);
+  box-shadow: 0 0 16px rgba(0, 233, 255, 0.14);
+}
+
+.file-drop-hint {
+  color: var(--text-color);
+  font-size: 0.78rem;
+  opacity: 0.7;
 }
 
 .file-upload-button {

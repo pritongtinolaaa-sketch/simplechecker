@@ -20,6 +20,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
 }) => {
   const [cookiesText, setCookiesText] = useState('')
   const [selectedFileNames, setSelectedFileNames] = useState<string[]>([])
+  const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -32,18 +33,43 @@ const CookieForm: React.FC<CookieFormProps> = ({
   const handleClear = () => {
     setCookiesText('')
     setSelectedFileNames([])
+    setIsDragging(false)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (!files.length) return
+  const processFiles = async (files: File[]) => {
+    const textFiles = files.filter((file) =>
+      file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')
+    )
+    if (!textFiles.length) return
 
-    const fileTexts = await Promise.all(files.map((file) => file.text()))
+    const fileTexts = await Promise.all(textFiles.map((file) => file.text()))
     setCookiesText(fileTexts.join('\n\n'))
-    setSelectedFileNames(files.map((file) => file.name))
+    setSelectedFileNames(textFiles.map((file) => file.name))
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await processFiles(Array.from(e.target.files || []))
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsDragging(false)
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    await processFiles(Array.from(e.dataTransfer.files))
   }
 
   return (
@@ -53,9 +79,14 @@ const CookieForm: React.FC<CookieFormProps> = ({
       <div className="form-group">
         <div className="input-label-row">
           <label htmlFor="cookies">Paste Netflix Cookies:</label>
-          <div className="file-upload-row">
+          <div
+            className={`file-upload-row${isDragging ? ' is-dragging' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <label className="btn btn-secondary file-upload-button">
-              <Icon name="upload" /> Upload .txt File
+              <Icon name="upload" /> Upload .txt Files
               <input
                 ref={fileInputRef}
                 type="file"
@@ -65,6 +96,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
                 disabled={loading}
               />
             </label>
+            <span className="file-drop-hint">or drop files here</span>
             {selectedFileNames.length > 0 && (
               <span className="file-upload-name" title={selectedFileNames.join(', ')}>
                 {selectedFileNames.join(', ')}
