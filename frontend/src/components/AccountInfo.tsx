@@ -1,65 +1,65 @@
-import React from 'react'
-import Icon from './Icon'
+import React from "react";
+import Icon from "./Icon";
 import {
   buildCookieDownloadContent,
   downloadTextFile,
-} from '../utils/cookieDownload'
+} from "../utils/cookieDownload";
 
 interface Profile {
-  name: string
-  isKids: boolean
-  guid: string
+  name: string;
+  isKids: boolean;
+  guid: string;
 }
 
 interface AccountResult {
-  bundle_number: number
-  cookie_count: number
-  success: boolean
-  email?: string
-  country?: string
-  plan?: string
-  subscription_status?: string
-  billing_date?: string
-  account_created_date?: string
-  payment_method?: string
-  streaming_quality?: string
-  profiles?: Profile[]
-  error?: string
+  bundle_number: number;
+  cookie_count: number;
+  success: boolean;
+  email?: string;
+  country?: string;
+  plan?: string;
+  subscription_status?: string;
+  billing_date?: string;
+  account_created_date?: string;
+  payment_method?: string;
+  streaming_quality?: string;
+  profiles?: Profile[];
+  error?: string;
 }
 
 interface TokenResult {
-  bundle_number: number
-  success: boolean
-  nftoken?: string
-  error?: string
+  bundle_number: number;
+  success: boolean;
+  nftoken?: string;
+  error?: string;
 }
 
 interface CookieBundle {
-  bundle_number: number
+  bundle_number: number;
   cookies: Array<{
-    name: string
-    value: string
-  }>
+    name: string;
+    value: string;
+  }>;
 }
 
 interface AccountInfoProps {
-  accounts?: AccountResult[]
-  tokenResults?: TokenResult[]
-  cookieBundles?: CookieBundle[]
-  accountCount?: number
-  bundleCount?: number
-  checkedCookieCount?: number
-  email?: string
-  country?: string
-  plan?: string
-  subscriptionStatus?: string
-  billingDate?: string
-  accountCreatedDate?: string
-  paymentMethod?: string
-  streamingQuality?: string
-  profiles?: Profile[]
-  error?: string
-  loading?: boolean
+  accounts?: AccountResult[];
+  tokenResults?: TokenResult[];
+  cookieBundles?: CookieBundle[];
+  accountCount?: number;
+  bundleCount?: number;
+  checkedCookieCount?: number;
+  email?: string;
+  country?: string;
+  plan?: string;
+  subscriptionStatus?: string;
+  billingDate?: string;
+  accountCreatedDate?: string;
+  paymentMethod?: string;
+  streamingQuality?: string;
+  profiles?: Profile[];
+  error?: string;
+  loading?: boolean;
 }
 
 const AccountInfo: React.FC<AccountInfoProps> = ({
@@ -79,18 +79,21 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   streamingQuality,
   profiles,
   error,
-  loading
+  loading,
 }) => {
-  const hasAccountResults = Boolean(accounts && accounts.length > 0)
-  const hasPartialResults = hasAccountResults || Boolean(tokenResults && tokenResults.length > 0)
+  const hasAccountResults = Boolean(accounts && accounts.length > 0);
+  const hasPartialResults =
+    hasAccountResults || Boolean(tokenResults && tokenResults.length > 0);
 
   if (loading && !hasPartialResults) {
     return (
       <div className="account-info loading">
-        <h2><Icon name="chart" /> Account Information</h2>
+        <h2>
+          <Icon name="chart" /> Account Information
+        </h2>
         <p>Starting cookie bundle checks...</p>
       </div>
-    )
+    );
   }
 
   const fallbackAccount: AccountResult = {
@@ -105,51 +108,62 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     account_created_date: accountCreatedDate,
     payment_method: paymentMethod,
     streaming_quality: streamingQuality,
-    profiles
-  }
-  const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount]
-  const totalAccountCount = accountCount ?? accountResults.length
+    profiles,
+  };
+  const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount];
+  const totalAccountCount = accountCount ?? accountResults.length;
   const accountByBundle = new Map(
-    accountResults.map((account) => [account.bundle_number, account])
-  )
+    accountResults.map((account) => [account.bundle_number, account]),
+  );
   const tokenByBundle = new Map(
-    (tokenResults || []).map((tokenResult) => [tokenResult.bundle_number, tokenResult])
-  )
+    (tokenResults || []).map((tokenResult) => [
+      tokenResult.bundle_number,
+      tokenResult,
+    ]),
+  );
   const cookieBundleByNumber = new Map(
-    cookieBundles.map((bundle) => [bundle.bundle_number, bundle])
-  )
+    cookieBundles.map((bundle) => [bundle.bundle_number, bundle]),
+  );
   const isBundleLive = (account: AccountResult) =>
-    account.success || Boolean(tokenByBundle.get(account.bundle_number)?.success)
-  const liveAccountResults = accountResults.filter(isBundleLive)
-  const invalidAccountResults = accountResults.filter(account => !isBundleLive(account))
+    account.success ||
+    Boolean(tokenByBundle.get(account.bundle_number)?.success);
+  const liveAccountResults = accountResults.filter(isBundleLive);
+  const invalidAccountResults = accountResults.filter(
+    (account) => !isBundleLive(account),
+  );
   const liveCookieBundles = cookieBundles.filter((bundle) => {
-    const account = accountByBundle.get(bundle.bundle_number)
-    const token = tokenByBundle.get(bundle.bundle_number)
-    return Boolean(account?.success || token?.success)
-  })
+    const account = accountByBundle.get(bundle.bundle_number);
+    const token = tokenByBundle.get(bundle.bundle_number);
+    return Boolean(account?.success || token?.success);
+  });
 
   const downloadBundle = (bundle: CookieBundle) => {
-    const account = accountByBundle.get(bundle.bundle_number) ||
-      (bundle.bundle_number === 1 ? fallbackAccount : undefined)
-    const token = tokenByBundle.get(bundle.bundle_number)
-    const content = buildCookieDownloadContent(bundle, account, token)
-    downloadTextFile(content, `netflix-live-cookie-${bundle.bundle_number}.txt`)
-  }
+    const account =
+      accountByBundle.get(bundle.bundle_number) ||
+      (bundle.bundle_number === 1 ? fallbackAccount : undefined);
+    const token = tokenByBundle.get(bundle.bundle_number);
+    const content = buildCookieDownloadContent(bundle, account, token);
+    downloadTextFile(
+      content,
+      `netflix-live-cookie-${bundle.bundle_number}.txt`,
+    );
+  };
 
   const handleDownloadAll = () => {
-    if (loading || liveCookieBundles.length === 0) return
+    if (loading || liveCookieBundles.length === 0) return;
 
     const content = liveCookieBundles
       .map((bundle) => {
-        const account = accountByBundle.get(bundle.bundle_number) ||
-          (bundle.bundle_number === 1 ? fallbackAccount : undefined)
-        const token = tokenByBundle.get(bundle.bundle_number)
-        return buildCookieDownloadContent(bundle, account, token)
+        const account =
+          accountByBundle.get(bundle.bundle_number) ||
+          (bundle.bundle_number === 1 ? fallbackAccount : undefined);
+        const token = tokenByBundle.get(bundle.bundle_number);
+        return buildCookieDownloadContent(bundle, account, token);
       })
-      .join('\n')
+      .join("\n");
 
-    downloadTextFile(content, 'netflix-live-cookies.txt')
-  }
+    downloadTextFile(content, "netflix-live-cookies.txt");
+  };
 
   const renderAccountDetails = (account: AccountResult) => (
     <>
@@ -207,7 +221,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
           <div className="info-item">
             <div className="info-label">Subscription Status</div>
             <div className="info-value">
-              <span className={`status-badge ${account.subscription_status.toLowerCase()}`}>
+              <span
+                className={`status-badge ${account.subscription_status.toLowerCase()}`}
+              >
                 {account.subscription_status}
               </span>
             </div>
@@ -236,26 +252,29 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         </div>
       )}
     </>
-  )
+  );
 
   const renderBundleToken = (tokenResult: TokenResult) => {
     if (!tokenResult.success || !tokenResult.nftoken) {
       return (
         <div className="alert alert-warning bundle-token-error">
-          <strong>Token unavailable:</strong> {tokenResult.error || 'No usable token was returned'}
+          <strong>Token unavailable:</strong>{" "}
+          {tokenResult.error || "No usable token was returned"}
         </div>
-      )
+      );
     }
 
-    const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
-    const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
-    const tvLoginUrl = 'https://www.netflix.com/tv8'
+    const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(tokenResult.nftoken)}`;
+    const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(tokenResult.nftoken)}`;
+    const tvLoginUrl = "https://www.netflix.com/tv8";
 
     return (
       <div className="bundle-token">
         <div className="bundle-token-header">
           <h4>Netflix Login Options</h4>
-          <span className="badge badge-success"><Icon name="check" /> Ready</span>
+          <span className="badge badge-success">
+            <Icon name="check" /> Ready
+          </span>
         </div>
         <div className="token-actions">
           <a
@@ -264,7 +283,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             rel="noopener noreferrer"
             className="btn btn-primary"
           >
-            <><Icon name="external" /> TV Login</>
+            <>
+              <Icon name="external" /> TV Login
+            </>
           </a>
           <a
             href={tokenUrl}
@@ -272,7 +293,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             rel="noopener noreferrer"
             className="btn btn-primary"
           >
-            <><Icon name="external" /> Open in Netflix</>
+            <>
+              <Icon name="external" /> Open in Netflix
+            </>
           </a>
           <a
             href={phoneTokenUrl}
@@ -280,92 +303,124 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             rel="noopener noreferrer"
             className="btn btn-primary"
           >
-            <><Icon name="phone" /> Open in Phone</>
+            <>
+              <Icon name="phone" /> Open in Phone
+            </>
           </a>
         </div>
       </div>
-    )
-  }
+    );
+  };
 
   const renderAccountResult = (account: AccountResult, collapsible = false) => {
-    const bundleIsLive = isBundleLive(account)
-    const tokenResult = tokenByBundle.get(account.bundle_number)
+    const bundleIsLive = isBundleLive(account);
+    const tokenResult = tokenByBundle.get(account.bundle_number);
     const accountContent = (
       <>
         {account.success ? (
           renderAccountDetails(account)
         ) : bundleIsLive ? (
           <div className="alert alert-warning">
-            <strong>Account details unavailable:</strong> {account.error ||
-              'The cookies generated a live token, but Netflix did not return account details.'}
+            <strong>Account details unavailable:</strong>{" "}
+            {account.error ||
+              "The cookies generated a live token, but Netflix did not return account details."}
           </div>
         ) : (
           <div className="alert alert-error">
-            <strong>Error:</strong> {tokenResult?.error || account.error || 'Cookies may be expired or invalid'}
+            <strong>Error:</strong>{" "}
+            {tokenResult?.error ||
+              account.error ||
+              "Cookies may be expired or invalid"}
           </div>
         )}
 
         {tokenResult && renderBundleToken(tokenResult)}
       </>
-    )
-    const downloadButton = bundleIsLive && cookieBundleByNumber.has(account.bundle_number) && (
-      <button
-        className="btn btn-secondary btn-small bundle-download-btn"
-        onClick={(event) => {
-          event.stopPropagation()
-          downloadBundle(cookieBundleByNumber.get(account.bundle_number)!)
-        }}
-        title={`Download Cookie Bundle #${account.bundle_number}`}
-      >
-        <><Icon name="download" /> Download</>
-      </button>
-    )
+    );
+    const downloadButton = bundleIsLive &&
+      cookieBundleByNumber.has(account.bundle_number) && (
+        <button
+          className="btn btn-secondary btn-small bundle-download-btn"
+          onClick={(event) => {
+            event.stopPropagation();
+            downloadBundle(cookieBundleByNumber.get(account.bundle_number)!);
+          }}
+          title={`Download Cookie Bundle #${account.bundle_number}`}
+        >
+          <>
+            <Icon name="download" /> Download
+          </>
+        </button>
+      );
 
     if (collapsible) {
       return (
         <details
           key={account.bundle_number}
-          className={`account-result account-result-collapsible ${bundleIsLive ? '' : 'failed'}`}
+          className={`account-result account-result-collapsible ${bundleIsLive ? "" : "failed"}`}
         >
           <summary className="account-result-header">
             <div className="account-result-summary-main">
               <h3>Cookie Bundle #{account.bundle_number}</h3>
             </div>
             <div className="account-result-actions">
-              <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
-                {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
+              <span
+                className={`badge ${bundleIsLive ? "badge-success" : "badge-default"}`}
+              >
+                {bundleIsLive ? (
+                  <>
+                    <Icon name="check" /> Live
+                  </>
+                ) : (
+                  "Expired / Invalid"
+                )}
               </span>
               {downloadButton}
             </div>
             <div className="account-result-summary-fields">
               {account.email && (
-                <span><strong>Email</strong>{account.email}</span>
+                <span>
+                  <strong>Email</strong>
+                  {account.email}
+                </span>
               )}
               {account.country && (
-                <span><strong>Country</strong>{account.country}</span>
+                <span>
+                  <strong>Country</strong>
+                  {account.country}
+                </span>
               )}
               {account.plan && (
-                <span><strong>Plan</strong>{account.plan}</span>
+                <span>
+                  <strong>Plan</strong>
+                  {account.plan}
+                </span>
               )}
             </div>
           </summary>
-          <div className="account-result-content">
-            {accountContent}
-          </div>
+          <div className="account-result-content">{accountContent}</div>
         </details>
-      )
+      );
     }
 
     return (
       <div
         key={account.bundle_number}
-        className={`account-result ${bundleIsLive ? '' : 'failed'}`}
+        className={`account-result ${bundleIsLive ? "" : "failed"}`}
       >
         <div className="account-result-header">
           <h3>Cookie Bundle #{account.bundle_number}</h3>
           <div className="account-result-actions">
-            <span className={`badge ${bundleIsLive ? 'badge-success' : 'badge-default'}`}>
-              {bundleIsLive ? <><Icon name="check" /> Live</> : 'Expired / Invalid'}
+            <span
+              className={`badge ${bundleIsLive ? "badge-success" : "badge-default"}`}
+            >
+              {bundleIsLive ? (
+                <>
+                  <Icon name="check" /> Live
+                </>
+              ) : (
+                "Expired / Invalid"
+              )}
             </span>
             {downloadButton}
           </div>
@@ -373,27 +428,38 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
 
         {accountContent}
       </div>
-    )
-  }
+    );
+  };
 
   if (error && !hasAccountResults) {
     return (
       <div className="account-info error">
-        <h2><Icon name="chart" /> Account Information</h2>
+        <h2>
+          <Icon name="chart" /> Account Information
+        </h2>
         <div className="alert alert-error">
           <strong>Error:</strong> {error}
         </div>
       </div>
-    )
+    );
   }
 
-  if (!hasAccountResults && !email && !country && !plan && !billingDate && !paymentMethod) {
+  if (
+    !hasAccountResults &&
+    !email &&
+    !country &&
+    !plan &&
+    !billingDate &&
+    !paymentMethod
+  ) {
     return (
       <div className="account-info empty">
-        <h2><Icon name="chart" /> Account Information</h2>
+        <h2>
+          <Icon name="chart" /> Account Information
+        </h2>
         <p>Click "Get Netflix Info" to extract account details from cookies.</p>
       </div>
-    )
+    );
   }
 
   return (
@@ -401,30 +467,50 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       <div className="info-header">
         <h2>
           <Icon name="chart" /> Live Account Information
-          {hasAccountResults && ` (${liveAccountResults.length}/${totalAccountCount})`}
+          {hasAccountResults &&
+            ` (${liveAccountResults.length}/${totalAccountCount})`}
         </h2>
         <div className="info-header-actions">
-          <span className={`badge ${loading ? 'badge-checking' : 'badge-success'}`}>
-            {hasAccountResults
-              ? `${liveAccountResults.length} Live${loading ? ' · Checking…' : ''}`
-              : <><Icon name="check" /> Retrieved</>}
+          <span
+            className={`badge ${loading ? "badge-checking" : "badge-success"}`}
+          >
+            {hasAccountResults ? (
+              `${liveAccountResults.length} Live${loading ? " · Checking…" : ""}`
+            ) : (
+              <>
+                <Icon name="check" /> Retrieved
+              </>
+            )}
           </span>
           <button
             className="btn btn-secondary btn-small download-all-btn"
             onClick={handleDownloadAll}
             disabled={loading || liveCookieBundles.length === 0}
-            title={loading ? 'Available when checking is complete' : 'Download all live cookies'}
+            title={
+              loading
+                ? "Available when checking is complete"
+                : "Download all live cookies"
+            }
           >
-            <><Icon name="download" /> Download All{liveCookieBundles.length > 0 ? ` (${liveCookieBundles.length})` : ''}</>
+            <>
+              <Icon name="download" /> Download All
+              {liveCookieBundles.length > 0
+                ? ` (${liveCookieBundles.length})`
+                : ""}
+            </>
           </button>
         </div>
       </div>
 
       {hasAccountResults && (
         <p className="account-summary">
-          Checked {bundleCount?.toLocaleString() || totalAccountCount.toLocaleString()} cookie bundles
-          {checkedCookieCount ? ` containing ${checkedCookieCount.toLocaleString()} cookies` : ''}.
-          {loading && ' Live results appear here as each bundle finishes.'}
+          Checked{" "}
+          {bundleCount?.toLocaleString() || totalAccountCount.toLocaleString()}{" "}
+          cookie bundles
+          {checkedCookieCount
+            ? ` containing ${checkedCookieCount.toLocaleString()} cookies`
+            : ""}
+          .{loading && " Live results appear here as each bundle finishes."}
         </p>
       )}
 
@@ -435,7 +521,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             <span>Click a bundle to expand</span>
           </div>
           <div className="account-results">
-            {liveAccountResults.map((account) => renderAccountResult(account, true))}
+            {liveAccountResults.map((account) =>
+              renderAccountResult(account, true),
+            )}
           </div>
         </section>
       )}
@@ -447,12 +535,14 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
             <span>Not working</span>
           </summary>
           <div className="account-results">
-            {invalidAccountResults.map((account) => renderAccountResult(account))}
+            {invalidAccountResults.map((account) =>
+              renderAccountResult(account),
+            )}
           </div>
         </details>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default AccountInfo
+export default AccountInfo;

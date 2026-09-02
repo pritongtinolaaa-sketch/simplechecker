@@ -1123,6 +1123,36 @@ body {
   flex: 1;
 }
 
+.bundle-token .token-actions .btn {
+  min-height: 4.75rem;
+  border-color: rgba(0, 233, 255, 0.78);
+  background: linear-gradient(
+    135deg,
+    rgba(0, 180, 220, 0.38) 0%,
+    rgba(165, 35, 175, 0.42) 100%
+  );
+  color: #f3fdff;
+  font-weight: 700;
+  text-decoration: none;
+  text-shadow: 0 0 8px rgba(217, 250, 255, 0.45);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 61, 242, 0.35),
+    0 0 12px rgba(0, 233, 255, 0.16);
+}
+
+.bundle-token .token-actions .btn:hover:not(:disabled) {
+  border-color: rgba(0, 233, 255, 1);
+  background: linear-gradient(
+    135deg,
+    rgba(0, 210, 240, 0.55) 0%,
+    rgba(205, 45, 190, 0.58) 100%
+  );
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 20px rgba(0, 233, 255, 0.34);
+}
+
 .token-info {
   background-color: rgba(100, 108, 255, 0.05);
   border-left: 4px solid var(--primary-color);
