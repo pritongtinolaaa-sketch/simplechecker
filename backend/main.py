@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -7,7 +7,6 @@ from datetime import datetime
 import httpx
 import asyncio
 import logging
-import secrets
 import os
 import re
 from dotenv import load_dotenv
@@ -23,16 +22,6 @@ if _pw_browsers:
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 app = FastAPI(title="Cookie Checker API", version="1.0.0")
-
-# Master Key Configuration
-# Keep the master key in Replit Secrets rather than in source control.
-MASTER_KEY = os.getenv("SESSION_SECRET")
-if not MASTER_KEY:
-    raise RuntimeError("SESSION_SECRET is not configured")
-
-# In-memory key storage (in production, use a database)
-# Maps key -> user_name
-valid_keys = {}
 
 # Enable CORS
 app.add_middleware(
@@ -76,40 +65,6 @@ class NetflixTokenResponse(BaseModel):
     error: Optional[str] = None
     cookies: List[Cookie] = []
     cookie_count: int = 0
-
-# Authentication Models
-class VerifyKeyRequest(BaseModel):
-    key: str
-
-class LoginResponse(BaseModel):
-    success: bool
-    message: str
-    is_master: bool = False
-    user_name: Optional[str] = None
-
-class GenerateKeyRequest(BaseModel):
-    master_key: str
-    user_name: str
-    custom_key: str
-
-class GenerateKeyResponse(BaseModel):
-    success: bool
-    key: Optional[str] = None
-    user_name: Optional[str] = None
-    message: str
-
-class DeleteKeyRequest(BaseModel):
-    master_key: str
-    key_to_delete: str
-
-class DeleteKeyResponse(BaseModel):
-    success: bool
-    message: str
-
-class ListKeysResponse(BaseModel):
-    success: bool
-    keys: List[dict]
-    count: int
 
 class NetflixAccountInfo(BaseModel):
     success: bool
@@ -689,18 +644,6 @@ async def get_browser_cookies_with_playwright(cookies_dict: dict) -> tuple[dict,
     except Exception as e:
         return {}, str(e)
 
-# Authentication Functions
-
-async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> str:
-    """Dependency to verify API key on protected endpoints"""
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail="API key required")
-    
-    if x_api_key == MASTER_KEY or x_api_key in valid_keys:
-        return x_api_key
-    
-    raise HTTPException(status_code=403, detail="Invalid API key")
-
 # API Endpoints
 
 @app.get("/")
@@ -712,90 +655,9 @@ async def root():
         "version": "1.0.0"
     }
 
-# Authentication Endpoints
-
-@app.post("/api/auth/login", response_model=LoginResponse)
-async def login(request: VerifyKeyRequest):
-    """Login endpoint - verify key and return success"""
-    if request.key == MASTER_KEY:
-        return LoginResponse(
-            success=True,
-            message="Login successful",
-            is_master=True,
-            user_name="Admin"
-        )
-    elif request.key in valid_keys:
-        user_name = valid_keys[request.key]
-        return LoginResponse(
-            success=True,
-            message="Login successful",
-            is_master=False,
-            user_name=user_name
-        )
-    else:
-        raise HTTPException(status_code=403, detail="Invalid key")
-
-@app.post("/api/auth/generate-key", response_model=GenerateKeyResponse)
-async def generate_key(request: GenerateKeyRequest):
-    """Create a new login key with custom key and user name (master key required)"""
-    if request.master_key != MASTER_KEY:
-        raise HTTPException(status_code=403, detail="Invalid master key")
-    
-    if not request.custom_key or not request.custom_key.strip():
-        raise HTTPException(status_code=400, detail="Custom key cannot be empty")
-    
-    # Check if key already exists
-    if request.custom_key in valid_keys:
-        raise HTTPException(status_code=400, detail="This key already exists")
-    
-    # Store the custom key with the user name
-    valid_keys[request.custom_key] = request.user_name
-    
-    return GenerateKeyResponse(
-        success=True,
-        key=request.custom_key,
-        user_name=request.user_name,
-        message=f"Login key created successfully for {request.user_name}"
-    )
-
-@app.post("/api/auth/delete-key", response_model=DeleteKeyResponse)
-async def delete_key(request: DeleteKeyRequest):
-    """Delete a login key (master key required)"""
-    if request.master_key != MASTER_KEY:
-        raise HTTPException(status_code=403, detail="Invalid master key")
-    
-    if request.key_to_delete not in valid_keys:
-        raise HTTPException(status_code=400, detail="Key not found")
-    
-    user_name = valid_keys[request.key_to_delete]
-    del valid_keys[request.key_to_delete]
-    
-    return DeleteKeyResponse(
-        success=True,
-        message=f"Login key for {user_name} has been deleted"
-    )
-
-@app.post("/api/auth/list-keys", response_model=ListKeysResponse)
-async def list_keys(request: VerifyKeyRequest):
-    """List all login keys (master key required)"""
-    if request.key != MASTER_KEY:
-        raise HTTPException(status_code=403, detail="Invalid master key")
-    
-    keys_list = [
-        {"key": key, "user_name": user_name}
-        for key, user_name in valid_keys.items()
-    ]
-    
-    return ListKeysResponse(
-        success=True,
-        keys=keys_list,
-        count=len(keys_list)
-    )
-
 @app.post("/api/check-cookies", response_model=CookieCheckResponse)
 async def check_cookies(
-    request: CookieCheckRequest,
-    api_key: str = Depends(verify_api_key)
+    request: CookieCheckRequest
 ):
     """
     Parse and extract cookies from provided text.
@@ -836,8 +698,7 @@ async def check_cookies(
 
 @app.post("/api/upload-cookies")
 async def upload_cookies(
-    file: UploadFile = File(...),
-    api_key: str = Depends(verify_api_key)
+    file: UploadFile = File(...)
 ):
     """
     Upload a file containing cookies (text or JSON).
@@ -876,8 +737,7 @@ async def get_stats():
 
 @app.post("/api/generate-netflix-token", response_model=NetflixTokenResponse)
 async def generate_netflix_token(
-    request: NetflixTokenRequest,
-    api_key: str = Depends(verify_api_key)
+    request: NetflixTokenRequest
 ):
     """
     Parse cookies and generate Netflix auto-login token.
@@ -938,8 +798,7 @@ async def generate_netflix_token(
 
 @app.post("/api/get-account-info", response_model=NetflixAccountInfo)
 async def get_account_info(
-    request: CookieCheckRequest,
-    api_key: str = Depends(verify_api_key)
+    request: CookieCheckRequest
 ):
     """
     Extract Netflix account information from cookies.
