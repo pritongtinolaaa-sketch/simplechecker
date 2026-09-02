@@ -31,6 +31,14 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
   // Filter out invalid cookies (empty name or value)
   const validCookies = cookies.filter(cookie => cookie.name && cookie.value)
   const fullCookieHeader = validCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
+  const cookieNameCounts = validCookies.reduce<Record<string, number>>((counts, cookie) => {
+    counts[cookie.name] = (counts[cookie.name] || 0) + 1
+    return counts
+  }, {})
+  const cookieNameSummary = Object.entries(cookieNameCounts)
+    .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
+    .map(([name, count]) => `${name} (${count})`)
+    .join(', ')
 
   const wrapText = (text: string, maxLength: number = 100): string => {
     const words = text.split(' ')
@@ -118,7 +126,7 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
   return (
     <div className="cookies-list">
       <div className="cookies-header">
-        <h3>✅ Checked Cookies (1)</h3>
+        <h3>✅ Checked Cookies ({validCookies.length.toLocaleString()})</h3>
         <button 
           className="btn btn-secondary btn-small"
           onClick={handleDownloadAll}
@@ -131,14 +139,17 @@ const CookiesList: React.FC<CookiesListProps> = ({ cookies, accountInfo, loading
         <div className="cookie-item">
           <div className="cookie-number-badge">#1</div>
           <div className="cookie-main">
-            <div className="cookie-name">
-              <strong>Full Cookie Header</strong>
+             <div className="cookie-name">
+               <strong>Complete Cookie Header</strong>
             </div>
             <div className="cookie-value">
               <code>{fullCookieHeader.substring(0, 180)}{fullCookieHeader.length > 180 ? '...' : ''}</code>
             </div>
             <div className="cookie-domain">
-              Keys included: <code>{validCookies.length}</code>
+               Records included: <code>{validCookies.length.toLocaleString()}</code>
+             </div>
+             <div className="cookie-domain">
+               Cookie names detected: <code>{cookieNameSummary}</code>
             </div>
           </div>
           <button
