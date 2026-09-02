@@ -136,9 +136,10 @@ body {
   border-top: 1px solid rgba(0, 233, 255, 0.18);
   background: linear-gradient(180deg, rgba(8, 15, 34, 0.88), rgba(5, 10, 24, 0.96));
   color: rgba(217, 250, 255, 0.78);
-  font-family: 'Share Tech Mono', 'Courier New', monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.1em;
+  font-family: 'Rajdhani', 'Orbitron', 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-align: center;
   text-shadow: 0 0 10px rgba(0, 233, 255, 0.35);
   box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.28);
