@@ -57,10 +57,11 @@ const Icon: React.FC<IconProps> = ({ name, size = 16, className }) => {
       )}
       {name === 'cookie' && (
         <>
-          <path d="M19.5 13.2a3.7 3.7 0 0 1-4.7-4.7A8.5 8.5 0 1 0 19.5 13.2Z" />
-          <circle cx="8.2" cy="9.2" r="1" />
-          <circle cx="12.4" cy="14.2" r="1" />
-          <circle cx="8.2" cy="16.7" r="1" />
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="8.5" cy="8.8" r="1" fill="currentColor" stroke="none" />
+          <circle cx="14.8" cy="8.8" r="1" fill="currentColor" stroke="none" />
+          <circle cx="9.2" cy="14.8" r="1" fill="currentColor" stroke="none" />
+          <circle cx="15.2" cy="15.4" r="1" fill="currentColor" stroke="none" />
         </>
       )}
       {name === 'close' && (
