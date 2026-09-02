@@ -19,7 +19,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
   progress
 }) => {
   const [cookiesText, setCookiesText] = useState('')
-  const [selectedFileName, setSelectedFileName] = useState('')
+  const [selectedFileNames, setSelectedFileNames] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -31,19 +31,19 @@ const CookieForm: React.FC<CookieFormProps> = ({
 
   const handleClear = () => {
     setCookiesText('')
-    setSelectedFileName('')
+    setSelectedFileNames([])
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
 
-    const fileText = await file.text()
-    setCookiesText(fileText)
-    setSelectedFileName(file.name)
+    const fileTexts = await Promise.all(files.map((file) => file.text()))
+    setCookiesText(fileTexts.join('\n\n'))
+    setSelectedFileNames(files.map((file) => file.name))
   }
 
   return (
@@ -60,13 +60,14 @@ const CookieForm: React.FC<CookieFormProps> = ({
                 ref={fileInputRef}
                 type="file"
                 accept=".txt,text/plain"
+                multiple
                 onChange={handleFileUpload}
                 disabled={loading}
               />
             </label>
-            {selectedFileName && (
-              <span className="file-upload-name" title={selectedFileName}>
-                {selectedFileName}
+            {selectedFileNames.length > 0 && (
+              <span className="file-upload-name" title={selectedFileNames.join(', ')}>
+                {selectedFileNames.join(', ')}
               </span>
             )}
           </div>
@@ -77,7 +78,7 @@ const CookieForm: React.FC<CookieFormProps> = ({
           value={cookiesText}
           onChange={(e) => {
             setCookiesText(e.target.value)
-            setSelectedFileName('')
+            setSelectedFileNames([])
           }}
           placeholder="Paste Netflix cookies, JSON, or a Netflix Account Details export..."
           disabled={loading}
