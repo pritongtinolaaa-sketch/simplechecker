@@ -7,6 +7,7 @@ interface NetflixTokenProps {
 
 const NetflixToken: React.FC<NetflixTokenProps> = ({ token, error }) => {
   const tokenUrl = `https://www.netflix.com/?nftoken=${encodeURIComponent(token)}`
+  const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(token)}`
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(tokenUrl).then(() => {
@@ -62,6 +63,14 @@ const NetflixToken: React.FC<NetflixTokenProps> = ({ token, error }) => {
           >
             🚀 Open in Netflix
           </a>
+           <a
+             href={phoneTokenUrl}
+             target="_blank"
+             rel="noopener noreferrer"
+             className="btn btn-primary"
+           >
+             📱 Open in Phone
+           </a>
         </div>
 
         <div className="token-info">
