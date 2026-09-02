@@ -3,7 +3,6 @@ import axios from 'axios'
 import './App.css'
 import CookieForm from './components/CookieForm'
 import CookiesList from './components/CookiesList'
-import NetflixToken from './components/NetflixToken'
 import Header from './components/Header'
 import AccountInfo from './components/AccountInfo'
 
@@ -11,14 +10,12 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
   const [tokenResults, setTokenResults] = useState<any[]>([])
-  const [tokenError, setTokenError] = useState('')
   const [accountInfo, setAccountInfo] = useState<any>(null)
   const [accountInfoError, setAccountInfoError] = useState('')
 
   const handleGetNetflixInfo = async (cookiesText: string, formatType: string) => {
     setLoading(true)
     setAccountInfoError('')
-    setTokenError('')
     setAccountInfo(null)
     setTokenResults([])
     setCookies([])
@@ -53,9 +50,6 @@ function App() {
       // Handle token response and extract cookies
       if (tokenResponse.data.tokens?.length) {
         setTokenResults(tokenResponse.data.tokens)
-        if (!tokenResponse.data.success) {
-          setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
-        }
       } else if (tokenResponse.data.success && tokenResponse.data.nftoken) {
         setTokenResults([{
           bundle_number: 1,
@@ -63,7 +57,7 @@ function App() {
           nftoken: tokenResponse.data.nftoken
         }])
       } else {
-        setTokenError(tokenResponse.data.error || 'Failed to generate Netflix token')
+        setAccountInfoError(tokenResponse.data.error || 'Failed to generate Netflix token')
       }
       
       // Store parsed cookies
@@ -73,7 +67,6 @@ function App() {
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to process request'
       setAccountInfoError(errorMessage)
-      setTokenError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -96,6 +89,7 @@ function App() {
           <div className="app-section">
             <AccountInfo
               accounts={accountInfo?.accounts}
+              tokenResults={tokenResults}
               accountCount={accountInfo?.account_count}
               bundleCount={accountInfo?.bundle_count}
               checkedCookieCount={accountInfo?.checked_cookie_count}
@@ -111,13 +105,6 @@ function App() {
               error={accountInfoError}
               loading={loading}
             />
-
-            {tokenResults.length > 0 && (
-              <NetflixToken
-                tokens={tokenResults}
-                error={tokenError}
-              />
-            )}
 
             <CookiesList
               cookies={cookies}

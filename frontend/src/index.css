@@ -247,32 +247,6 @@ body {
   flex: 1;
 }
 
-/* Format Info */
-.format-info {
-  background-color: rgba(100, 108, 255, 0.1);
-  border-left: 4px solid var(--primary-color);
-  padding: 1rem;
-  border-radius: var(--border-radius);
-  margin-top: 1rem;
-}
-
-.format-info p {
-  color: var(--primary-color);
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.format-info ul {
-  list-style: none;
-  padding-left: 0;
-}
-
-.format-info li {
-  padding: 0.25rem 0;
-  color: var(--text-color);
-  font-size: 0.9rem;
-}
-
 /* Results Display */
 .cookie-display {
   padding: 2rem;
@@ -563,6 +537,33 @@ body {
 
 .account-result .profiles-section h3 {
   font-size: 0.95rem;
+}
+
+.bundle-token {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 233, 255, 0.2);
+}
+
+.bundle-token-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.bundle-token-header h4 {
+  margin: 0;
+  color: var(--primary-color);
+}
+
+.bundle-token .token-actions {
+  margin-bottom: 0;
+}
+
+.bundle-token-error {
+  margin: 1rem 0 0;
 }
 
 .info-grid {

@@ -22,8 +22,16 @@ interface AccountResult {
   error?: string
 }
 
+interface TokenResult {
+  bundle_number: number
+  success: boolean
+  nftoken?: string
+  error?: string
+}
+
 interface AccountInfoProps {
   accounts?: AccountResult[]
+  tokenResults?: TokenResult[]
   accountCount?: number
   bundleCount?: number
   checkedCookieCount?: number
@@ -42,6 +50,7 @@ interface AccountInfoProps {
 
 const AccountInfo: React.FC<AccountInfoProps> = ({
   accounts,
+  tokenResults,
   accountCount,
   bundleCount,
   checkedCookieCount,
@@ -84,6 +93,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   const accountResults = hasAccountResults ? accounts || [] : [fallbackAccount]
   const successfulAccountCount = accountResults.filter(account => account.success).length
   const totalAccountCount = accountCount ?? accountResults.length
+  const tokenByBundle = new Map(
+    (tokenResults || []).map((tokenResult) => [tokenResult.bundle_number, tokenResult])
+  )
 
   const renderAccountDetails = (account: AccountResult) => (
     <>
@@ -172,6 +184,65 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     </>
   )
 
+  const renderBundleToken = (tokenResult: TokenResult) => {
+    if (!tokenResult.success || !tokenResult.nftoken) {
+      return (
+        <div className="alert alert-warning bundle-token-error">
+          <strong>Token unavailable:</strong> {tokenResult.error || 'No usable token was returned'}
+        </div>
+      )
+    }
+
+    const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
+    const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(tokenResult.nftoken)}`
+
+    const handleCopyToken = () => {
+      navigator.clipboard.writeText(tokenUrl).then(() => {
+        alert('Netflix token link copied to clipboard!')
+      })
+    }
+
+    return (
+      <div className="bundle-token">
+        <div className="bundle-token-header">
+          <h4>Netflix Token Link</h4>
+          <span className="badge badge-success">✓ Ready</span>
+        </div>
+        <div className="token-link-container">
+          <a
+            href={tokenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="token-link"
+          >
+            {tokenUrl}
+          </a>
+        </div>
+        <div className="token-actions">
+          <button className="btn btn-primary" onClick={handleCopyToken}>
+            📋 Copy Link
+          </button>
+          <a
+            href={tokenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary"
+          >
+            🚀 Open in Netflix
+          </a>
+          <a
+            href={phoneTokenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary"
+          >
+            📱 Open in Phone
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   if (error && !hasAccountResults) {
     return (
       <div className="account-info error">
@@ -231,6 +302,9 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
                 <strong>Error:</strong> {account.error || 'Could not extract account information'}
               </div>
             )}
+
+            {tokenByBundle.has(account.bundle_number) &&
+              renderBundleToken(tokenByBundle.get(account.bundle_number)!)}
           </div>
         ))}
       </div>

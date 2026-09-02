@@ -36,7 +36,6 @@ A full-stack web application for extracting and analyzing cookies from browsers 
 │   │   │   ├── Header.tsx
 │   │   │   ├── CookieForm.tsx
 │   │   │   ├── CookieDisplay.tsx
-│   │   │   └── NetflixToken.tsx
 │   │   ├── App.tsx
 │   │   ├── main.tsx
 │   │   └── index.css

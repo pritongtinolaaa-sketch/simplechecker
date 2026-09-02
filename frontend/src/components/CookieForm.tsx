@@ -72,14 +72,6 @@ const CookieForm: React.FC<CookieFormProps> = ({
         </button>
       </div>
 
-      <div className="format-info">
-        <p><strong>Format Info:</strong></p>
-        <ul>
-          <li><strong>Netscape:</strong> Tab-separated format from browser export</li>
-          <li><strong>JSON:</strong> Array of objects with name/value properties</li>
-          <li><strong>Auto:</strong> Automatically detect the format</li>
-        </ul>
-      </div>
     </form>
   )
 }
