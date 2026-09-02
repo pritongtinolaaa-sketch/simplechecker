@@ -423,6 +423,32 @@ async def generate_nftoken(cookies: dict) -> tuple[bool, Optional[str], Optional
     except Exception as e:
         return False, None, str(e)
 
+
+def normalize_netflix_plan(value: object) -> Optional[str]:
+    """Normalize Netflix plan metadata while preserving ad-supported variants."""
+    if value is None:
+        return None
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    normalized = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+    tier = next(
+        (name for name in ("Premium", "Standard", "Basic") if name.lower() in normalized),
+        None,
+    )
+    if not tier:
+        return raw
+
+    has_ads = (
+        " ads" in f" {normalized}"
+        or "ad supported" in normalized
+        or "withadvert" in normalized.replace(" ", "")
+    )
+    return f"{tier} with Ads" if has_ads else tier
+
+
 async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict], Optional[str]]:
     """Extract Netflix account info via Playwright using the confirmed reactContext structure."""
     norm = {}
@@ -571,16 +597,18 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                     max_streams = _falcor_val(curr.get('maxUserLimit')) or _falcor_val(curr.get('numAllowedDevices'))
                     print(f"[DEBUG] currentAccount: {curr}", flush=True)
                     print(f"[DEBUG] max_streams raw: {max_streams}", flush=True)
+                    metadata_plan = (
+                        _falcor_val(curr.get('planName'))
+                        or _falcor_val(curr.get('planType'))
+                    )
+                    if metadata_plan:
+                        account_info['plan'] = normalize_netflix_plan(metadata_plan)
                     if max_streams is not None:
                         try:
                             n = int(max_streams)
-                            stream_plan_map = {1: "Basic (1 Screen)", 2: "Standard (2 Screens)", 4: "Premium (4 Screens)"}
-                            account_info['plan'] = stream_plan_map.get(n, f"{n} Screens")
                             account_info['max_streams'] = n
                         except (ValueError, TypeError):
                             pass
-                    if not account_info.get('plan'):
-                        account_info['plan'] = _falcor_val(curr.get('planName')) or _falcor_val(curr.get('planType'))
                     if not account_info.get('streaming_quality'):
                         account_info['streaming_quality'] = _falcor_val(curr.get('maxStreamingQuality'))
 
@@ -649,7 +677,9 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                             continue
                         for pk in PLAN_KEYS:
                             if model_data.get(pk) and not account_info.get('plan'):
-                                account_info['plan'] = str(model_data[pk])
+                                account_info['plan'] = normalize_netflix_plan(
+                                    _falcor_val(model_data[pk])
+                                )
                                 print(f"[DEBUG] Plan from model [{model_key}][{pk}]: {account_info['plan']}", flush=True)
                         for sk in STREAM_KEYS:
                             if model_data.get(sk) is not None and not account_info.get('max_streams'):
@@ -671,7 +701,9 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                     if isinstance(ya_jg, dict):
                         for pk in ['planName', 'plan', 'planLabel', 'planType']:
                             if ya_jg.get(pk) and not account_info.get('plan'):
-                                account_info['plan'] = _falcor_val(ya_jg[pk])
+                                account_info['plan'] = normalize_netflix_plan(
+                                    _falcor_val(ya_jg[pk])
+                                )
                         for sk in ['maxStreams', 'maxUserLimit', 'numAllowedDevices', 'numScreens']:
                             if ya_jg.get(sk) is not None and not account_info.get('max_streams'):
                                 v = _falcor_val(ya_jg[sk])
@@ -694,7 +726,7 @@ async def get_netflix_account_info(cookies: dict) -> tuple[bool, Optional[dict],
                             if el:
                                 txt = (await el.inner_text()).strip()
                                 if txt:
-                                    account_info['plan'] = txt
+                                    account_info['plan'] = normalize_netflix_plan(txt)
                                     print(f"[DEBUG] Plan from DOM ({sel}): {txt}", flush=True)
                                     break
                         except Exception:
