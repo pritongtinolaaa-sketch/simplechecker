@@ -523,6 +523,26 @@ body {
   opacity: 0.75;
 }
 
+.invalid-account-group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.invalid-account-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.invalid-account-group > summary::after {
+  content: '▸';
+  color: #ff6b9c;
+  font-size: 1.1rem;
+  margin-left: auto;
+}
+
+.invalid-account-group[open] > summary::after {
+  content: '▾';
+}
+
 .invalid-account-group .account-group-header {
   border-bottom-color: rgba(255, 64, 129, 0.35);
 }

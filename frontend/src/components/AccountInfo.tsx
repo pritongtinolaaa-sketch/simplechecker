@@ -332,15 +332,15 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
       )}
 
       {invalidAccountResults.length > 0 && (
-        <section className="account-group invalid-account-group">
-          <div className="account-group-header">
+        <details className="account-group invalid-account-group">
+          <summary className="account-group-header">
             <h3>Expired / Invalid Cookies ({invalidAccountResults.length})</h3>
             <span>Not working</span>
-          </div>
+          </summary>
           <div className="account-results">
             {invalidAccountResults.map(renderAccountResult)}
           </div>
-        </section>
+        </details>
       )}
     </div>
   )
