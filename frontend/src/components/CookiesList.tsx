@@ -123,7 +123,9 @@ const CookiesList: React.FC<CookiesListProps> = ({
       content += `Status: ${details?.error || 'Live cookie bundle'}\n`
     }
 
+    content += '\n'
     content += buildTokenLinks(token)
+    content += '\n'
     return content
   }
 
