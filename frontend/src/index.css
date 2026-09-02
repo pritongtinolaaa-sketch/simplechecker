@@ -71,7 +71,7 @@ body {
 .header {
   background: linear-gradient(125deg, rgba(5, 18, 40, 0.95) 0%, rgba(15, 11, 45, 0.9) 60%, rgba(8, 22, 48, 0.95) 100%);
   color: #e8fcff;
-  padding: 1.6rem 2rem;
+  padding: 1rem 2rem 1.1rem;
   text-align: center;
   border-bottom: 1px solid rgba(0, 233, 255, 0.45);
   box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(255, 61, 242, 0.2);
@@ -116,6 +116,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.7rem;
+  line-height: 1.1;
   font-size: 2rem;
   margin-bottom: 0.25rem;
   font-weight: 700;
@@ -127,6 +128,7 @@ body {
 .header-credit {
   display: block;
   margin: -0.15rem 0 0.15rem;
+  line-height: 1;
   color: #ff9df7;
   font-family: 'Share Tech Mono', 'Courier New', monospace;
   font-size: 0.68rem;
@@ -146,6 +148,7 @@ body {
 
 .header-subtitle {
   margin: 0;
+  line-height: 1.2;
   font-size: 0.9rem;
   opacity: 0.9;
 }
@@ -1320,7 +1323,7 @@ body {
   }
 
   .header {
-    padding: 1.35rem 1rem;
+    padding: 0.95rem 1rem 1.05rem;
   }
 
   .header-content {
