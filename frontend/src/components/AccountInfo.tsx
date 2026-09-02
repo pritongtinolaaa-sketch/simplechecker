@@ -266,7 +266,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
 
     const tokenUrl = `https://netflix.com/?nftoken=${encodeURIComponent(tokenResult.nftoken)}`;
     const phoneTokenUrl = `https://www.netflix.com/unsupported?nftoken=${encodeURIComponent(tokenResult.nftoken)}`;
-    const tvLoginUrl = "https://www.netflix.com/tv8";
+    const tvLoginUrl = `https://www.netflix.com/tv2?nftoken=${encodeURIComponent(tokenResult.nftoken)}`;
 
     return (
       <div className="bundle-token">
