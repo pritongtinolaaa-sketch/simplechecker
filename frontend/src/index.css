@@ -163,6 +163,116 @@ body {
   z-index: 1;
 }
 
+.top-nav {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1rem 0;
+}
+
+.top-nav button,
+.secondary-button {
+  width: auto;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(0, 233, 255, 0.35);
+  border-radius: 7px;
+  background: rgba(9, 21, 42, 0.8);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.admin-page {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+.admin-login,
+.admin-empty,
+.stored-card {
+  border: 1px solid rgba(0, 233, 255, 0.3);
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
+  box-shadow: var(--glow);
+}
+
+.admin-login {
+  max-width: 440px;
+  margin: 4rem auto;
+  padding: 2rem;
+}
+
+.admin-login input {
+  width: 100%;
+  margin: 1.25rem 0 0.8rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: #080e1d;
+  color: white;
+}
+
+.admin-login button[type="submit"] {
+  width: 100%;
+}
+
+.eyebrow {
+  color: var(--primary-color);
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.admin-error, .status-bad { color: var(--error-color); }
+.status-ok { color: var(--success-color); }
+
+.admin-toolbar,
+.stored-card-header,
+.admin-actions,
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-toolbar { margin-bottom: 1.4rem; }
+.stored-grid { display: grid; gap: 1rem; }
+.stored-card { padding: 1.2rem; }
+.stored-card small { display: block; opacity: 0.7; }
+.status-row { justify-content: flex-start; margin: 0.8rem 0; }
+.admin-empty { padding: 3rem; text-align: center; }
+
+.danger-button {
+  width: auto;
+  padding: 0.45rem 0.75rem;
+  border-color: rgba(255, 77, 143, 0.5);
+  background: rgba(255, 77, 143, 0.1);
+  color: var(--error-color);
+}
+
+.stored-card details { margin-top: 0.8rem; }
+.stored-card summary { cursor: pointer; color: var(--primary-color); }
+.stored-card pre {
+  max-height: 300px;
+  margin-top: 0.7rem;
+  padding: 0.8rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: #050914;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+@media (max-width: 640px) {
+  .admin-toolbar, .stored-card-header { align-items: flex-start; flex-direction: column; }
+}
+
 .footer {
   position: relative;
   z-index: 1;

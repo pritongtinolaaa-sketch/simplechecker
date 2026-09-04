@@ -5,6 +5,7 @@ import CookieForm from './components/CookieForm'
 import CookiesList from './components/CookiesList'
 import Header from './components/Header'
 import AccountInfo from './components/AccountInfo'
+import AdminCookies from './components/AdminCookies'
 
 interface CheckProgress {
   status: string
@@ -15,6 +16,7 @@ interface CheckProgress {
 }
 
 function App() {
+  const [page, setPage] = useState(window.location.pathname === '/admin/cookies' ? 'admin' : 'checker')
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
   const [cookieBundles, setCookieBundles] = useState<any[]>([])
@@ -112,6 +114,13 @@ function App() {
   return (
     <div className="app">
       <Header />
+      <nav className="top-nav">
+        <button onClick={() => { window.history.pushState({}, '', '/'); setPage('checker') }}>Checker</button>
+        <button onClick={() => { window.history.pushState({}, '', '/admin/cookies'); setPage('admin') }}>Admin storage</button>
+      </nav>
+      {page === 'admin' ? (
+        <AdminCookies onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
+      ) : (
       <main className="app-container">
         <div className="app-grid">
           <div className="app-section">
@@ -153,6 +162,7 @@ function App() {
           </div>
         </div>
       </main>
+      )}
       <footer className="footer">© Schiro 2026</footer>
     </div>
   )
