@@ -60,6 +60,8 @@ interface AccountInfoProps {
   profiles?: Profile[];
   error?: string;
   loading?: boolean;
+  isAdmin?: boolean;
+  onSaveBundle?: (bundle: CookieBundle) => void;
 }
 
 const AccountInfo: React.FC<AccountInfoProps> = ({
@@ -80,6 +82,8 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   profiles,
   error,
   loading,
+  isAdmin,
+  onSaveBundle,
 }) => {
   const hasAccountResults = Boolean(accounts && accounts.length > 0);
   const hasPartialResults =
@@ -337,6 +341,21 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         {tokenResult && renderBundleToken(tokenResult)}
       </>
     );
+    const saveButton = bundleIsLive && isAdmin && cookieBundleByNumber.has(account.bundle_number) && (
+      <button
+        className="btn btn-secondary btn-small bundle-download-btn"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSaveBundle?.(cookieBundleByNumber.get(account.bundle_number)!);
+        }}
+        title={`Save Cookie Bundle #${account.bundle_number} to admin storage`}
+      >
+        <>
+          <Icon name="circleCheck" /> Save
+        </>
+      </button>
+    );
+
     const downloadButton = bundleIsLive &&
       cookieBundleByNumber.has(account.bundle_number) && (
         <button
@@ -375,6 +394,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
                   "Expired / Invalid"
                 )}
               </span>
+              {saveButton}
               {downloadButton}
             </div>
             <div className="account-result-summary-fields">
@@ -422,6 +442,7 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
                 "Expired / Invalid"
               )}
             </span>
+            {saveButton}
             {downloadButton}
           </div>
         </div>

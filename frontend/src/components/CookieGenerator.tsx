@@ -20,7 +20,13 @@ interface GeneratorState {
   links: Record<string, string>
 }
 
-export default function CookieGenerator({ onBack }: { onBack: () => void }) {
+export default function CookieGenerator({
+  onBack,
+  isAdmin,
+}: {
+  onBack: () => void
+  isAdmin?: boolean
+}) {
   const [items, setItems] = useState<StoredBundleSummary[]>([])
   const [current, setCurrent] = useState<GeneratorState | null>(null)
   const [loading, setLoading] = useState(true)
@@ -28,16 +34,31 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
   const [usedIds, setUsedIds] = useState<number[]>([])
 
   useEffect(() => {
-    const load = async () => {
+    const warmUp = async () => {
+      setLoading(true)
       try {
         const response = await axios.get('/api/stored-cookies')
         setItems(response.data.items || [])
       } catch {
         setItems([])
+      } finally {
+        setLoading(false)
       }
     }
-    load()
+
+    warmUp()
   }, [])
+
+  const loadStoredBundles = async () => {
+    try {
+      const response = await axios.get('/api/stored-cookies')
+      setItems(response.data.items || [])
+      return response.data.items || []
+    } catch {
+      setItems([])
+      return []
+    }
+  }
 
   const remaining = useMemo(
     () => items.filter(item => !usedIds.includes(item.id)),
@@ -49,6 +70,13 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
     setError('')
 
     try {
+      const bundles = await loadStoredBundles()
+      if (bundles.length === 0) {
+        setCurrent(null)
+        setError('No stored cookie bundles are available yet.')
+        return
+      }
+
       const response = await axios.get('/api/stored-cookies/next')
       const next = response.data
       setCurrent(next)
@@ -62,7 +90,8 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
   }
 
   const moveToNext = async () => {
-    if (remaining.length === 0) {
+    const bundles = await loadStoredBundles()
+    if (bundles.length === 0) {
       setCurrent(null)
       setError('No remaining stored cookie bundles. Refresh or re-open admin storage.')
       return
@@ -71,6 +100,7 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
   }
 
   const accountSummary = current?.account ? current.account : null
+  const hasAccountFields = accountSummary && typeof accountSummary === 'object' && Object.keys(accountSummary).length > 0
 
   return (
     <main className="admin-page">
@@ -78,7 +108,7 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
         <div>
           <span className="eyebrow">Generator</span>
           <h2>Stored Cookie Generator</h2>
-          <p>{items.length} stored bundle{items.length === 1 ? '' : 's'} available</p>
+          {isAdmin && <span className="status-ok">Admin logged in</span>}
         </div>
         <div className="admin-actions">
           <button className="secondary-button" onClick={onBack}>Back to checker</button>
@@ -111,13 +141,22 @@ export default function CookieGenerator({ onBack }: { onBack: () => void }) {
             </span>
           </div>
 
-          {accountSummary && (
+          {hasAccountFields && (
             <div>
-              <p><strong>Email:</strong> {String(accountSummary.email || 'Unknown')}</p>
-              <p><strong>Plan:</strong> {String(accountSummary.plan || 'Unknown')}</p>
-              <p><strong>Country:</strong> {String(accountSummary.country || 'Unknown')}</p>
-              <p><strong>Status:</strong> {String(accountSummary.subscription_status || 'Unknown')}</p>
+              {accountSummary.error && <p className="admin-error"><strong>Status:</strong> {String(accountSummary.error)}</p>}
+              {!accountSummary.error && (
+                <>
+                  <p><strong>Email:</strong> {String(accountSummary.email || 'Unknown')}</p>
+                  <p><strong>Plan:</strong> {String(accountSummary.plan || 'Unknown')}</p>
+                  <p><strong>Country:</strong> {String(accountSummary.country || 'Unknown')}</p>
+                  <p><strong>Status:</strong> {String(accountSummary.subscription_status || accountSummary.status || 'Unknown')}</p>
+                </>
+              )}
             </div>
+          )}
+
+          {current.token && current.token.nftoken && (
+            <p><strong>Token:</strong> Ready</p>
           )}
 
           {current.links && Object.keys(current.links).length > 0 && (

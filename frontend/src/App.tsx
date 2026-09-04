@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 import './App.css'
 import CookieForm from './components/CookieForm'
@@ -24,6 +24,7 @@ function App() {
         ? 'generator'
         : 'checker'
   )
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
   const [cookieBundles, setCookieBundles] = useState<any[]>([])
@@ -37,6 +38,31 @@ function App() {
     totalCookies: 0,
     completedCookies: 0
   })
+
+  useEffect(() => {
+    axios.get('/api/admin/session')
+      .then(({ data }) => setIsAdmin(Boolean(data.is_admin)))
+      .catch(() => setIsAdmin(false))
+  }, [])
+
+  const handleSaveBundle = async (bundle: any) => {
+    if (!isAdmin) return
+
+    const account = (accountInfo?.accounts || []).find((item: any) => item.bundle_number === bundle.bundle_number) || {}
+    const token = (tokenResults || []).find((item: any) => item.bundle_number === bundle.bundle_number) || {}
+
+    try {
+      await axios.post('/api/admin/checked-cookies', {
+        bundle_number: bundle.bundle_number,
+        cookies: bundle.cookies || [],
+        account,
+        token,
+      })
+      alert('Bundle saved to admin storage.')
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Unable to save this bundle to admin storage.')
+    }
+  }
 
   const handleGetNetflixInfo = async (cookiesText: string, formatType: string) => {
     setLoading(true)
@@ -125,11 +151,15 @@ function App() {
         <button onClick={() => { window.history.pushState({}, '', '/'); setPage('checker') }}>Checker</button>
         <button onClick={() => { window.history.pushState({}, '', '/admin/cookies'); setPage('admin') }}>Admin storage</button>
         <button onClick={() => { window.history.pushState({}, '', '/generator'); setPage('generator') }}>Cookie generator</button>
+        {isAdmin && <span className="status-ok">Admin logged in</span>}
       </nav>
       {page === 'admin' ? (
         <AdminCookies onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
       ) : page === 'generator' ? (
-        <CookieGenerator onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
+        <CookieGenerator
+          isAdmin={isAdmin}
+          onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }}
+        />
       ) : (
         <main className="app-container">
           <div className="app-grid">
@@ -160,9 +190,8 @@ function App() {
                 profiles={accountInfo?.profiles}
                 error={accountInfoError}
                 loading={loading}
-              />
-
-              <CookiesList
+              isAdmin={isAdmin}
+              onSaveBundle={handleSaveBundle}
                 cookies={cookies}
                 cookieBundles={cookieBundles}
                 accounts={accountInfo?.accounts}

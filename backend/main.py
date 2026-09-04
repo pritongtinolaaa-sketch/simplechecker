@@ -1748,15 +1748,38 @@ async def get_next_stored_cookie():
         raise HTTPException(status_code=404, detail="No stored cookie bundles available")
 
     row = random.choice(rows)
+    storage_account = json.loads(row["account_json"])
+    storage_token = json.loads(row["token_json"])
     evaluated = await _evaluate_bundle_record(row)
+
+    account_data = evaluated["account"]
+    if isinstance(storage_account, dict) and storage_account.get("email"):
+        account_data = {**storage_account, **account_data}
+    if account_data.get("success") is False and storage_account.get("success") is True:
+        account_data = {**storage_account, **account_data}
+
+    token_data = evaluated["token"]
+    if isinstance(storage_token, dict) and storage_token.get("nftoken"):
+        token_data = {**storage_token, **token_data}
+    if token_data.get("success") is False and storage_token.get("success") is True:
+        token_data = {**storage_token, **token_data}
+
+    links = evaluated["links"]
+    if token_data.get("nftoken"):
+        links = {
+            "tv": f"https://www.netflix.com/tv2?nftoken={token_data['nftoken']}",
+            "netflix": f"https://netflix.com/?nftoken={token_data['nftoken']}",
+            "phone": f"https://www.netflix.com/unsupported?nftoken={token_data['nftoken']}",
+        }
+
     return {
-        "success": evaluated["success"],
+        "success": bool(account_data.get("success") or token_data.get("success") or bool(token_data.get("nftoken"))),
         "id": row["id"],
         "bundle_number": row["bundle_number"],
         "checked_at": evaluated["checked_at"],
-        "account": evaluated["account"],
-        "token": evaluated["token"],
-        "links": evaluated["links"],
+        "account": account_data,
+        "token": token_data,
+        "links": links,
     }
 
 
