@@ -62,6 +62,29 @@ export default function AdminCookies({ onBack }: { onBack: () => void }) {
     setItems(current => current.filter(item => item.id !== id))
   }
 
+  const deleteDead = async () => {
+    if (!window.confirm('Delete all dead stored cookie bundles?')) return
+    const response = await axios.delete('/api/admin/checked-cookies/dead')
+    const deleted = Number(response.data.deleted || 0)
+    if (deleted > 0) {
+      setItems(current => current.filter(item => !(item.account_success === false && item.token_success === false)))
+    }
+    setError(deleted > 0 ? `${deleted} dead bundle${deleted === 1 ? '' : 's'} removed.` : 'No dead bundles were removed.')
+  }
+
+  const refreshBundle = async (id: number) => {
+    const response = await axios.post(`/api/admin/checked-cookies/${id}/refresh`)
+    const refreshed = response.data
+    setItems(current => current.map(item => item.id === id ? {
+      ...item,
+      checked_at: new Date().toISOString(),
+      account_success: Boolean(refreshed.account?.success),
+      token_success: Boolean(refreshed.token?.success),
+      account: refreshed.account || item.account,
+      token: refreshed.token || item.token,
+    } : item))
+  }
+
   if (loading) return <main className="admin-page"><p>Loading admin storage…</p></main>
 
   if (!isAdmin) {
@@ -97,9 +120,11 @@ export default function AdminCookies({ onBack }: { onBack: () => void }) {
         </div>
         <div className="admin-actions">
           <button className="secondary-button" onClick={onBack}>Checker</button>
+          <button className="secondary-button" onClick={deleteDead}>Delete dead cookies</button>
           <button className="secondary-button" onClick={logout}>Sign out</button>
         </div>
       </div>
+      {error && <p className="admin-error">{error}</p>}
       {items.length === 0 ? (
         <section className="admin-empty">No checked cookie bundles have been stored yet.</section>
       ) : (
@@ -111,11 +136,14 @@ export default function AdminCookies({ onBack }: { onBack: () => void }) {
                   <strong>Bundle #{item.id}</strong>
                   <small>{new Date(item.checked_at).toLocaleString()}</small>
                 </div>
-                <button className="danger-button" onClick={() => remove(item.id)}>Delete</button>
+                <div className="admin-actions">
+                  <button className="secondary-button" onClick={() => refreshBundle(item.id)}>Refresh token</button>
+                  <button className="danger-button" onClick={() => remove(item.id)}>Delete</button>
+                </div>
               </div>
               <div className="status-row">
-                <span className={item.account_success ? 'status-ok' : 'status-bad'}>Account {item.account_success ? 'valid' : 'failed'}</span>
-                <span className={item.token_success ? 'status-ok' : 'status-bad'}>Token {item.token_success ? 'valid' : 'failed'}</span>
+                <span className={item.account_success ? 'status-ok' : 'status-bad'}>Account {item.account_success ? 'alive' : 'dead'}</span>
+                <span className={item.token_success ? 'status-ok' : 'status-bad'}>Token {item.token_success ? 'alive' : 'dead'}</span>
               </div>
               <p>{String(item.account.email || 'No email')} · {String(item.account.plan || 'Unknown plan')}</p>
               <details>

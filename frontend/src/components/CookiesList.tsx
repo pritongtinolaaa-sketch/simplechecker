@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import axios from 'axios'
 import Icon from './Icon'
 
 interface Cookie {
@@ -56,9 +57,18 @@ const CookiesList: React.FC<CookiesListProps> = ({
   loading
 }) => {
   const [copiedBundleNumber, setCopiedBundleNumber] = useState<number | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [savingBundleNumber, setSavingBundleNumber] = useState<number | null>(null)
+  const [savedBundleNumbers, setSavedBundleNumbers] = useState<number[]>([])
   const validCookies = cookies.filter(cookie => cookie.name && cookie.value)
   const accountByBundle = new Map(accounts.map(account => [account.bundle_number, account]))
   const tokenByBundle = new Map(tokenResults.map(token => [token.bundle_number, token]))
+
+  useEffect(() => {
+    axios.get('/api/admin/session')
+      .then(({ data }) => setIsAdmin(Boolean(data.is_admin)))
+      .catch(() => setIsAdmin(false))
+  }, [])
   const liveBundles = cookieBundles.filter((bundle) => {
     const account = accountByBundle.get(bundle.bundle_number)
     const token = tokenByBundle.get(bundle.bundle_number)
@@ -85,6 +95,30 @@ const CookiesList: React.FC<CookiesListProps> = ({
       window.setTimeout(() => setCopiedBundleNumber(null), 1800)
     } catch {
       alert('Unable to copy cookies to the clipboard.')
+    }
+  }
+
+  const handleSaveToAdmin = async (bundle: CookieBundle) => {
+    if (!isAdmin) return
+
+    const account = accountByBundle.get(bundle.bundle_number) || {}
+    const token = tokenByBundle.get(bundle.bundle_number) || {}
+
+    setSavingBundleNumber(bundle.bundle_number)
+    try {
+      await axios.post('/api/admin/checked-cookies', {
+        bundle_number: bundle.bundle_number,
+        cookies: bundle.cookies,
+        account,
+        token,
+      })
+      setSavedBundleNumbers(current => current.includes(bundle.bundle_number)
+        ? current
+        : [...current, bundle.bundle_number])
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Unable to save this bundle to admin storage.')
+    } finally {
+      setSavingBundleNumber(null)
     }
   }
 
@@ -133,14 +167,32 @@ const CookiesList: React.FC<CookiesListProps> = ({
                 </div>
                 <div className="cookie-expanded-header">
                   <div className="cookie-expanded-label">Full cookie bundle</div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-small"
-                    onClick={() => handleCopyCookies(bundle.bundle_number, cookieHeader)}
-                  >
-                    <Icon name="copy" />
-                    {copiedBundleNumber === bundle.bundle_number ? 'Copied' : 'Copy Cookies'}
-                  </button>
+                  <div className="cookie-expanded-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      onClick={() => handleCopyCookies(bundle.bundle_number, cookieHeader)}
+                    >
+                      <Icon name="copy" />
+                      {copiedBundleNumber === bundle.bundle_number ? 'Copied' : 'Copy Cookies'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={!isAdmin || savingBundleNumber === bundle.bundle_number || savedBundleNumbers.includes(bundle.bundle_number)}
+                      onClick={() => handleSaveToAdmin(bundle)}
+                      title={isAdmin ? 'Store this live bundle in admin storage' : 'Admin login required'}
+                    >
+                      <Icon name="circleCheck" />
+                      {savingBundleNumber === bundle.bundle_number
+                        ? 'Saving…'
+                        : savedBundleNumbers.includes(bundle.bundle_number)
+                          ? 'Saved'
+                          : isAdmin
+                            ? 'Save to Admin Storage'
+                            : 'Admin login required'}
+                    </button>
+                  </div>
                 </div>
                 <pre className="cookie-full-value">{cookieHeader}</pre>
               </div>

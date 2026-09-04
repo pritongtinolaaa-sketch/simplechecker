@@ -6,6 +6,7 @@ import CookiesList from './components/CookiesList'
 import Header from './components/Header'
 import AccountInfo from './components/AccountInfo'
 import AdminCookies from './components/AdminCookies'
+import CookieGenerator from './components/CookieGenerator'
 
 interface CheckProgress {
   status: string
@@ -16,7 +17,13 @@ interface CheckProgress {
 }
 
 function App() {
-  const [page, setPage] = useState(window.location.pathname === '/admin/cookies' ? 'admin' : 'checker')
+  const [page, setPage] = useState(
+    window.location.pathname === '/admin/cookies'
+      ? 'admin'
+      : window.location.pathname === '/generator'
+        ? 'generator'
+        : 'checker'
+  )
   const [loading, setLoading] = useState(false)
   const [cookies, setCookies] = useState([])
   const [cookieBundles, setCookieBundles] = useState<any[]>([])
@@ -117,51 +124,54 @@ function App() {
       <nav className="top-nav">
         <button onClick={() => { window.history.pushState({}, '', '/'); setPage('checker') }}>Checker</button>
         <button onClick={() => { window.history.pushState({}, '', '/admin/cookies'); setPage('admin') }}>Admin storage</button>
+        <button onClick={() => { window.history.pushState({}, '', '/generator'); setPage('generator') }}>Cookie generator</button>
       </nav>
       {page === 'admin' ? (
         <AdminCookies onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
+      ) : page === 'generator' ? (
+        <CookieGenerator onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
       ) : (
-      <main className="app-container">
-        <div className="app-grid">
-          <div className="app-section">
-            <CookieForm
-              onSubmit={handleGetNetflixInfo}
-              loading={loading}
-              progress={progress}
-            />
-          </div>
+        <main className="app-container">
+          <div className="app-grid">
+            <div className="app-section">
+              <CookieForm
+                onSubmit={handleGetNetflixInfo}
+                loading={loading}
+                progress={progress}
+              />
+            </div>
 
-          <div className="app-section">
-            <AccountInfo
-              accounts={accountInfo?.accounts}
-              tokenResults={tokenResults}
-              cookieBundles={cookieBundles}
-              accountCount={accountInfo?.account_count}
-              bundleCount={accountInfo?.bundle_count}
-              checkedCookieCount={accountInfo?.checked_cookie_count}
-              email={accountInfo?.email}
-              country={accountInfo?.country}
-              plan={accountInfo?.plan}
-              subscriptionStatus={accountInfo?.subscription_status}
-              billingDate={accountInfo?.billing_date}
-              accountCreatedDate={accountInfo?.account_created_date}
-              paymentMethod={accountInfo?.payment_method}
-              streamingQuality={accountInfo?.streaming_quality}
-              profiles={accountInfo?.profiles}
-              error={accountInfoError}
-              loading={loading}
-            />
+            <div className="app-section">
+              <AccountInfo
+                accounts={accountInfo?.accounts}
+                tokenResults={tokenResults}
+                cookieBundles={cookieBundles}
+                accountCount={accountInfo?.account_count}
+                bundleCount={accountInfo?.bundle_count}
+                checkedCookieCount={accountInfo?.checked_cookie_count}
+                email={accountInfo?.email}
+                country={accountInfo?.country}
+                plan={accountInfo?.plan}
+                subscriptionStatus={accountInfo?.subscription_status}
+                billingDate={accountInfo?.billing_date}
+                accountCreatedDate={accountInfo?.account_created_date}
+                paymentMethod={accountInfo?.payment_method}
+                streamingQuality={accountInfo?.streaming_quality}
+                profiles={accountInfo?.profiles}
+                error={accountInfoError}
+                loading={loading}
+              />
 
-            <CookiesList
-              cookies={cookies}
-              cookieBundles={cookieBundles}
-              accounts={accountInfo?.accounts}
-              tokenResults={tokenResults}
-              loading={loading}
-            />
+              <CookiesList
+                cookies={cookies}
+                cookieBundles={cookieBundles}
+                accounts={accountInfo?.accounts}
+                tokenResults={tokenResults}
+                loading={loading}
+              />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
       )}
       <footer className="footer">© Schiro 2026</footer>
     </div>

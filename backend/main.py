@@ -16,6 +16,7 @@ import base64
 import sqlite3
 from pathlib import Path
 import re
+import random
 from dotenv import load_dotenv
 from urllib.parse import unquote
 from uuid import uuid4
@@ -129,6 +130,13 @@ class AdminLoginRequest(BaseModel):
     password: str
 
 
+class AdminStoreRequest(BaseModel):
+    bundle_number: int
+    cookies: List[Cookie]
+    account: dict
+    token: dict
+
+
 COOKIE_DB_PATH = Path(__file__).resolve().parent / "checked_cookies.db"
 ADMIN_COOKIE_NAME = "cookie_checker_admin"
 
@@ -140,6 +148,7 @@ def _cookie_db() -> sqlite3.Connection:
         """
         CREATE TABLE IF NOT EXISTS checked_cookie_bundles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bundle_number INTEGER NOT NULL DEFAULT 0,
             checked_at TEXT NOT NULL,
             account_success INTEGER NOT NULL,
             token_success INTEGER NOT NULL,
@@ -149,6 +158,13 @@ def _cookie_db() -> sqlite3.Connection:
         )
         """
     )
+    columns = [
+        row[1] for row in connection.execute("PRAGMA table_info(checked_cookie_bundles)").fetchall()
+    ]
+    if "bundle_number" not in columns:
+        connection.execute(
+            "ALTER TABLE checked_cookie_bundles ADD COLUMN bundle_number INTEGER NOT NULL DEFAULT 0"
+        )
     connection.commit()
     return connection
 
@@ -178,17 +194,21 @@ def _require_admin(request: Request) -> None:
 
 
 def _store_checked_bundle(
-    bundle_cookies: List[Cookie], account_result: dict, token_result: dict
-) -> None:
+    bundle_number: int,
+    bundle_cookies: List[Cookie],
+    account_result: dict,
+    token_result: dict,
+) -> int:
     with _cookie_db() as connection:
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT INTO checked_cookie_bundles (
-                checked_at, account_success, token_success,
+                bundle_number, checked_at, account_success, token_success,
                 account_json, token_json, cookies_json
-            ) VALUES (?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                bundle_number,
                 datetime.utcnow().isoformat(),
                 int(bool(account_result.get("success"))),
                 int(bool(token_result.get("success"))),
@@ -198,6 +218,59 @@ def _store_checked_bundle(
             ),
         )
         connection.commit()
+    return int(cursor.lastrowid)
+
+
+async def _evaluate_bundle_record(row: sqlite3.Row) -> dict:
+    cookie_data = json.loads(row["cookies_json"])
+    cookie_map = {
+        item["name"]: item["value"]
+        for item in cookie_data
+        if item.get("name") and item.get("value")
+    }
+
+    if not cookie_map:
+        return {
+            "success": False,
+            "bundle_number": row["bundle_number"],
+            "checked_at": row["checked_at"],
+            "account": {"bundle_number": row["bundle_number"], "success": False, "error": "Stored bundle has no readable cookies."},
+            "token": {"bundle_number": row["bundle_number"], "success": False, "error": "Stored bundle has no readable cookies."},
+            "links": {},
+        }
+
+    success, nftoken, token_error = await generate_nftoken(cookie_map)
+    account_success, account_info, account_error = await get_netflix_account_info(cookie_map)
+
+    final_account = account_info if account_success and account_info else {
+        "bundle_number": row["bundle_number"],
+        "success": False,
+        "error": account_error or "Account details unavailable for this cookie bundle.",
+    }
+
+    final_token = {
+        "bundle_number": row["bundle_number"],
+        "success": bool(success and nftoken),
+        "nftoken": nftoken,
+        "error": token_error if not (success and nftoken) else None,
+    }
+
+    links = {}
+    if nftoken:
+        links = {
+            "tv": f"https://www.netflix.com/tv2?nftoken={nftoken}",
+            "netflix": f"https://netflix.com/?nftoken={nftoken}",
+            "phone": f"https://www.netflix.com/unsupported?nftoken={nftoken}",
+        }
+
+    return {
+        "success": bool(account_success and success and nftoken),
+        "bundle_number": row["bundle_number"],
+        "checked_at": datetime.utcnow().isoformat(),
+        "account": final_account,
+        "token": final_token,
+        "links": links,
+    }
 
 
 # ===== DISCORD LOGGER WITH DEBUG =====
@@ -1536,13 +1609,6 @@ async def _run_bundle_check(job_id: str, bundles: List[tuple[List[Cookie], List[
             ]
             for completed_task in asyncio.as_completed(tasks):
                 index, cookie_count, account_result, token_result = await completed_task
-                bundle_cookies = bundles[index - 1][0]
-                await asyncio.to_thread(
-                    _store_checked_bundle,
-                    bundle_cookies,
-                    account_result,
-                    token_result,
-                )
                 job["accounts"].append(account_result)
                 job["tokens"].append(token_result)
                 job["accounts"].sort(key=lambda result: result["bundle_number"])
@@ -1651,6 +1717,65 @@ async def admin_session(request: Request):
     return {"is_admin": _is_admin(request)}
 
 
+@app.get("/api/stored-cookies")
+async def list_public_stored_cookies():
+    with _cookie_db() as connection:
+        rows = connection.execute(
+            "SELECT id, bundle_number, checked_at, account_success, token_success, account_json FROM checked_cookie_bundles ORDER BY id DESC"
+        ).fetchall()
+    return {
+        "items": [
+            {
+                "id": row["id"],
+                "bundle_number": row["bundle_number"],
+                "checked_at": row["checked_at"],
+                "account_success": bool(row["account_success"]),
+                "token_success": bool(row["token_success"]),
+                "account": json.loads(row["account_json"]),
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.get("/api/stored-cookies/next")
+async def get_next_stored_cookie():
+    with _cookie_db() as connection:
+        rows = connection.execute(
+            "SELECT * FROM checked_cookie_bundles ORDER BY id DESC"
+        ).fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No stored cookie bundles available")
+
+    row = random.choice(rows)
+    evaluated = await _evaluate_bundle_record(row)
+    return {
+        "success": evaluated["success"],
+        "id": row["id"],
+        "bundle_number": row["bundle_number"],
+        "checked_at": evaluated["checked_at"],
+        "account": evaluated["account"],
+        "token": evaluated["token"],
+        "links": evaluated["links"],
+    }
+
+
+@app.post("/api/admin/checked-cookies")
+async def save_checked_cookies(request: Request, payload: AdminStoreRequest):
+    _require_admin(request)
+    bundle_id = _store_checked_bundle(
+        payload.bundle_number,
+        payload.cookies,
+        payload.account or {},
+        payload.token or {},
+    )
+    return {
+        "success": True,
+        "id": bundle_id,
+        "bundle_number": payload.bundle_number,
+    }
+
+
 @app.get("/api/admin/checked-cookies")
 async def list_checked_cookies(request: Request):
     _require_admin(request)
@@ -1662,6 +1787,7 @@ async def list_checked_cookies(request: Request):
         "items": [
             {
                 "id": row["id"],
+                "bundle_number": row["bundle_number"],
                 "checked_at": row["checked_at"],
                 "account_success": bool(row["account_success"]),
                 "token_success": bool(row["token_success"]),
@@ -1671,6 +1797,42 @@ async def list_checked_cookies(request: Request):
             }
             for row in rows
         ]
+    }
+
+
+@app.post("/api/admin/checked-cookies/{bundle_id}/refresh")
+async def refresh_checked_cookies(bundle_id: int, request: Request):
+    _require_admin(request)
+    with _cookie_db() as connection:
+        row = connection.execute(
+            "SELECT * FROM checked_cookie_bundles WHERE id = ?", (bundle_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Stored bundle not found")
+
+        evaluated = await _evaluate_bundle_record(row)
+        cursor = connection.execute(
+            """
+            UPDATE checked_cookie_bundles
+            SET checked_at = ?, account_success = ?, token_success = ?, account_json = ?, token_json = ?
+            WHERE id = ?
+            """,
+            (
+                evaluated["checked_at"],
+                int(bool(evaluated["account"].get("success"))),
+                int(bool(evaluated["token"].get("success"))),
+                json.dumps(evaluated["account"]),
+                json.dumps(evaluated["token"]),
+                bundle_id,
+            ),
+        )
+        connection.commit()
+    return {
+        "success": evaluated["success"],
+        "bundle_number": evaluated["bundle_number"],
+        "account": evaluated["account"],
+        "token": evaluated["token"],
+        "links": evaluated["links"],
     }
 
 
@@ -1685,6 +1847,17 @@ async def delete_checked_cookies(bundle_id: int, request: Request):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stored bundle not found")
     return Response(status_code=204)
+
+
+@app.delete("/api/admin/checked-cookies/dead")
+async def delete_dead_checked_cookies(request: Request):
+    _require_admin(request)
+    with _cookie_db() as connection:
+        cursor = connection.execute(
+            "DELETE FROM checked_cookie_bundles WHERE account_success = 0 AND token_success = 0"
+        )
+        connection.commit()
+    return {"deleted": cursor.rowcount}
 
 
 @app.get("/test-discord")
