@@ -1,98 +1,234 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
+import Icon from './Icon'
+import { formatPhtDateTime } from '../utils/date'
 
-interface StoredBundleSummary {
-  id: number
-  bundle_number: number
-  checked_at: string
-  account_success: boolean
-  token_success: boolean
-  account: Record<string, any>
+const GENERATOR_MAX_GENERATIONS = 5
+const GENERATOR_RESET_MESSAGE = 'Resets daily at 12:00 AM PHT'
+const GENERATOR_LIMIT_MESSAGE = 'Daily generation limit reached. Resets at 12:00 AM PHT.'
+const DEFAULT_GENERATOR_MAINTENANCE_MESSAGE = 'Under maintenance. Please come back later.'
+
+const getManilaDate = () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${values.year}-${values.month}-${values.day}`
 }
 
-interface GeneratorState {
+export interface GeneratorState {
   success: boolean
   id: number
+  storage_position: number
   bundle_number: number
   checked_at: string
   account: Record<string, any>
   token: Record<string, any>
   links: Record<string, string>
+  generation_count?: number | null
+  generation_limit?: number | null
+  generation_date?: string | null
+}
+
+type GeneratorStatus = {
+  enabled: boolean
+  message: string
+}
+
+type StoredHealth = {
+  last_checked_at: string | null
+  is_checking: boolean
 }
 
 export default function CookieGenerator({
-  onBack,
-  isAdmin,
+  isAdmin = false,
+  adminStatusReady = true,
+  current: initialCurrent = null,
+  onCurrentChange,
 }: {
-  onBack: () => void
   isAdmin?: boolean
+  adminStatusReady?: boolean
+  current?: GeneratorState | null
+  onCurrentChange?: (current: GeneratorState | null) => void
 }) {
-  const [items, setItems] = useState<StoredBundleSummary[]>([])
-  const [current, setCurrent] = useState<GeneratorState | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialCurrent)
   const [error, setError] = useState('')
-  const [usedIds, setUsedIds] = useState<number[]>([])
+  const [generationCount, setGenerationCount] = useState<number | null>(
+    initialCurrent?.generation_count ?? null,
+  )
+  const [generationDate, setGenerationDate] = useState<string | null>(
+    initialCurrent?.generation_date ?? null,
+  )
+  const [generatorStatus, setGeneratorStatus] = useState<GeneratorStatus | null>(null)
+  const [generatorStatusError, setGeneratorStatusError] = useState('')
+  const [storedHealth, setStoredHealth] = useState<StoredHealth>({
+    last_checked_at: null,
+    is_checking: false,
+  })
+  const current = initialCurrent
+  const generatorDisabled = generatorStatus?.enabled === false
+  const generatorReady = generatorStatus?.enabled === true
+  const generationLimitReached =
+    !isAdmin &&
+    generationCount !== null &&
+    generationCount >= GENERATOR_MAX_GENERATIONS
 
   useEffect(() => {
-    const warmUp = async () => {
-      setLoading(true)
+    let active = true
+
+    const loadGeneratorStatus = async () => {
       try {
-        const response = await axios.get('/api/stored-cookies')
-        setItems(response.data.items || [])
+        const response = await axios.get('/api/generator/status')
+        if (!active) return
+        setGeneratorStatus({
+          enabled: Boolean(response.data.enabled),
+          message:
+            typeof response.data.message === 'string' && response.data.message.trim()
+              ? response.data.message
+              : DEFAULT_GENERATOR_MAINTENANCE_MESSAGE,
+        })
+        setGeneratorStatusError('')
       } catch {
-        setItems([])
-      } finally {
+        if (!active) return
+        setGeneratorStatus(null)
+        setGeneratorStatusError('Unable to verify generator status. Please try again later.')
         setLoading(false)
       }
     }
 
-    warmUp()
+    loadGeneratorStatus()
+    const timer = window.setInterval(loadGeneratorStatus, 30_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const loadStoredHealth = async () => {
+      try {
+        const response = await axios.get('/api/stored-cookies/health')
+        if (!active) return
+        setStoredHealth({
+          last_checked_at:
+            typeof response.data.last_checked_at === 'string'
+              ? response.data.last_checked_at
+              : null,
+          is_checking: Boolean(response.data.is_checking),
+        })
+      } catch {
+        // The generator can still work if health metadata is temporarily unavailable.
+      }
+    }
+
+    loadStoredHealth()
+    const timer = window.setInterval(loadStoredHealth, 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [])
 
   const loadStoredBundles = async () => {
     try {
       const response = await axios.get('/api/stored-cookies')
-      setItems(response.data.items || [])
       return response.data.items || []
     } catch {
-      setItems([])
       return []
     }
   }
 
-  const remaining = useMemo(
-    () => items.filter(item => !usedIds.includes(item.id)),
-    [items, usedIds],
-  )
-
   const nextCookie = async () => {
+    if (!adminStatusReady || !generatorReady || (!isAdmin && generationLimitReached)) {
+      if (generationLimitReached) {
+        setError(GENERATOR_LIMIT_MESSAGE)
+      }
+      return
+    }
+
     setLoading(true)
     setError('')
 
     try {
       const bundles = await loadStoredBundles()
       if (bundles.length === 0) {
-        setCurrent(null)
+        onCurrentChange?.(null)
         setError('No stored cookie bundles are available yet.')
         return
       }
 
       const response = await axios.get('/api/stored-cookies/next')
       const next = response.data
-      setCurrent(next)
-      setUsedIds((prev) => prev.includes(next.id) ? prev : [...prev, next.id])
+      if (typeof next.generation_count === 'number') {
+        setGenerationCount(next.generation_count)
+      }
+      if (typeof next.generation_date === 'string') {
+        setGenerationDate(next.generation_date)
+      }
+      onCurrentChange?.(next)
     } catch (err: any) {
-      setCurrent(null)
-      setError(err.response?.data?.detail || 'No valid stored cookies are available right now.')
+      if (err.response?.status === 429) {
+        setGenerationCount(GENERATOR_MAX_GENERATIONS)
+        setGenerationDate(getManilaDate())
+        setError(
+          err.response?.data?.detail ||
+            GENERATOR_LIMIT_MESSAGE,
+        )
+      } else if (err.response?.status === 503) {
+        const message =
+          err.response?.data?.detail || DEFAULT_GENERATOR_MAINTENANCE_MESSAGE
+        setGeneratorStatus({ enabled: false, message })
+        setLoading(false)
+      } else {
+        onCurrentChange?.(null)
+        setError(err.response?.data?.detail || 'No valid stored cookies are available right now.')
+      }
     } finally {
       setLoading(false)
     }
   }
 
+  useEffect(() => {
+    if (!adminStatusReady || !generatorReady) return
+    if (generatorDisabled) {
+      setLoading(false)
+      return
+    }
+    if (initialCurrent) {
+      setLoading(false)
+      return
+    }
+    nextCookie()
+  }, [initialCurrent, adminStatusReady, generatorReady, generatorDisabled])
+
+  useEffect(() => {
+    if (isAdmin || !generationDate) return
+
+    const resetIfNewManilaDay = () => {
+      if (generationDate !== getManilaDate()) {
+        setGenerationCount(0)
+        setGenerationDate(getManilaDate())
+      }
+    }
+
+    resetIfNewManilaDay()
+    const timer = window.setInterval(resetIfNewManilaDay, 30_000)
+    return () => window.clearInterval(timer)
+  }, [generationDate, isAdmin])
+
   const moveToNext = async () => {
+    if (generationLimitReached) {
+      setError(GENERATOR_LIMIT_MESSAGE)
+      return
+    }
     const bundles = await loadStoredBundles()
     if (bundles.length === 0) {
-      setCurrent(null)
+      onCurrentChange?.(null)
       setError('No remaining stored cookie bundles. Refresh or re-open admin storage.')
       return
     }
@@ -101,77 +237,181 @@ export default function CookieGenerator({
 
   const accountSummary = current?.account ? current.account : null
   const hasAccountFields = accountSummary && typeof accountSummary === 'object' && Object.keys(accountSummary).length > 0
+  const accountFields = accountSummary
+    ? [
+        ['Email', accountSummary.email],
+        ['Plan', accountSummary.plan],
+        ['Country', accountSummary.country],
+        ['Subscription', accountSummary.subscription_status || accountSummary.status],
+        ['Billing date', accountSummary.billing_date],
+        ['Account created', accountSummary.account_created_date],
+        ['Payment method', accountSummary.payment_method],
+        ['Streaming quality', accountSummary.streaming_quality],
+      ].filter(([, value]) => value !== undefined && value !== null && value !== '')
+    : []
+  const profiles = Array.isArray(accountSummary?.profiles) ? accountSummary.profiles : []
+  const tokenReady = Boolean(current?.token?.success || current?.token?.nftoken)
 
   return (
-    <main className="admin-page">
+    <main className="admin-page generator-page">
       <div className="admin-toolbar">
         <div>
           <span className="eyebrow">Generator</span>
           <h2>Stored Cookie Generator</h2>
-          {isAdmin && <span className="status-ok">Admin logged in</span>}
         </div>
-        <div className="admin-actions">
-          <button className="secondary-button" onClick={onBack}>Back to checker</button>
-          <button className="secondary-button" onClick={nextCookie} disabled={loading}>Next cookie</button>
+        <div className="admin-actions generator-actions">
+          <button
+            className="btn btn-primary generator-button"
+            onClick={nextCookie}
+            disabled={loading || !adminStatusReady || !generatorReady || generationLimitReached}
+          >
+            <span>{generationLimitReached ? 'Generation limit reached' : 'Next cookie'}</span>
+            {!generationLimitReached && <Icon name="arrowRight" size={17} />}
+          </button>
         </div>
       </div>
 
       {error && <p className="admin-error">{error}</p>}
+      {generatorStatusError && <p className="admin-error">{generatorStatusError}</p>}
 
-      {!current && !loading && (
-        <section className="admin-empty">
-          <p>No cookie generator result selected yet.</p>
-          <button className="secondary-button" onClick={nextCookie}>Generate from stored cookies</button>
+      {generatorDisabled ? (
+        <section className="generator-maintenance-card" role="status" aria-live="polite">
+          <span className="eyebrow">Generator unavailable</span>
+          <h3>{generatorStatus?.message || DEFAULT_GENERATOR_MAINTENANCE_MESSAGE}</h3>
         </section>
-      )}
+      ) : (
+        <>
+          {!isAdmin && adminStatusReady && generationCount !== null && (
+            <p className={`generator-limit-note${generationLimitReached ? ' is-limit-reached' : ''}`}>
+              Generations used: {generationCount}/{GENERATOR_MAX_GENERATIONS} · {GENERATOR_RESET_MESSAGE}
+            </p>
+          )}
+          <p className="generator-health-note">
+            Last checked:{' '}
+            {storedHealth.last_checked_at
+              ? formatPhtDateTime(storedHealth.last_checked_at)
+              : storedHealth.is_checking
+                ? 'Checking now…'
+                : 'Pending first hourly check'}
+            {' · Health checks run hourly'}
+          </p>
 
-      {current && (
-        <section className="stored-card">
-          <div className="stored-card-header">
-            <div>
-              <strong>Stored Bundle #{current.bundle_number}</strong>
-              <small>{new Date(current.checked_at).toLocaleString()}</small>
+          {!current && !loading && (
+            <section className="admin-empty">
+              <p>
+                {generationLimitReached
+                  ? GENERATOR_LIMIT_MESSAGE
+                  : 'No cookie generator result selected yet.'}
+              </p>
+              <button
+                className="btn btn-primary generator-button generator-generate-button"
+                onClick={nextCookie}
+                disabled={!adminStatusReady || !generatorReady || generationLimitReached}
+              >
+                <Icon name="cookie" size={17} />
+                {generationLimitReached
+                  ? 'Generation limit reached'
+                  : 'Generate from stored cookies'}
+              </button>
+            </section>
+          )}
+
+          {current && (
+            <section className="stored-card generator-result-card">
+          <div className="generator-result-header">
+            <div className="generator-result-title">
+              <span className="eyebrow">Generator result</span>
+              <strong>Stored Cookie #{current.storage_position}</strong>
+              <small>{formatPhtDateTime(current.checked_at)}</small>
             </div>
-            <button className="secondary-button" onClick={moveToNext}>Next cookie</button>
+            <div className="generator-result-meta">
+              <span className={`generator-status ${current.success ? 'is-live' : 'is-invalid'}`}>
+                <span className="generator-status-dot" />
+                {current.success ? 'Working' : 'Not working'}
+              </span>
+              {tokenReady && <span className="generator-token-status">Token ready</span>}
+            </div>
           </div>
 
-          <div className="status-row">
-            <span className={current.success ? 'status-ok' : 'status-bad'}>
-              {current.success ? 'Working' : 'Not working'}
-            </span>
-          </div>
+          {accountSummary?.error && (
+            <p className="generator-refresh-note">
+              <strong>Refresh note:</strong> {String(accountSummary.error)}
+            </p>
+          )}
 
-          {hasAccountFields && (
-            <div>
-              {accountSummary.error && <p className="admin-error"><strong>Status:</strong> {String(accountSummary.error)}</p>}
-              {!accountSummary.error && (
-                <>
-                  <p><strong>Email:</strong> {String(accountSummary.email || 'Unknown')}</p>
-                  <p><strong>Plan:</strong> {String(accountSummary.plan || 'Unknown')}</p>
-                  <p><strong>Country:</strong> {String(accountSummary.country || 'Unknown')}</p>
-                  <p><strong>Status:</strong> {String(accountSummary.subscription_status || accountSummary.status || 'Unknown')}</p>
-                </>
-              )}
+          {hasAccountFields && accountFields.length > 0 && (
+            <div className="generator-account-section">
+              <div className="generator-section-heading">
+                <span>Account snapshot</span>
+                <span className="generator-section-line" />
+              </div>
+              <div className="info-grid generator-info-grid">
+                {accountFields.map(([label, value]) => (
+                  <div className="info-item" key={String(label)}>
+                    <div className="info-label">{String(label)}</div>
+                    <div className="info-value">{String(value)}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {current.token && current.token.nftoken && (
-            <p><strong>Token:</strong> Ready</p>
-          )}
-
-          {current.links && Object.keys(current.links).length > 0 && (
-            <div className="status-row" style={{ marginTop: '1rem', flexWrap: 'wrap' }}>
-              {Object.entries(current.links).map(([label, url]) => (
-                <a key={label} href={url} target="_blank" rel="noreferrer" className="secondary-button">
-                  {label === 'tv' ? 'TV Login' : label === 'netflix' ? 'Open in Netflix' : 'Phone Login'}
-                </a>
+          {profiles.length > 0 && (
+            <div className="generator-profiles">
+              <span className="generator-profiles-label">Profiles</span>
+              {profiles.map((profile: any, index: number) => (
+                <span className="generator-profile-pill" key={`${String(profile.name || 'Profile')}-${index}`}>
+                  {String(profile.name || 'Profile')}
+                </span>
               ))}
             </div>
           )}
-        </section>
-      )}
 
-      {loading && <p className="admin-empty">Loading the next stored cookie…</p>}
+          {current.links && Object.keys(current.links).length > 0 && (
+            <div className="generator-result-footer">
+              <div className="generator-link-actions">
+                <span className="generator-actions-label">Quick actions</span>
+                {Object.entries(current.links).map(([label, url]) => (
+                  <a key={label} href={url} target="_blank" rel="noreferrer" className="btn btn-secondary generator-button generator-link-button">
+                    {label === 'tv' && <Icon name="film" size={17} />}
+                    {label === 'netflix' && <Icon name="external" size={17} />}
+                    {label === 'phone' && <Icon name="phone" size={17} />}
+                    <span>{label === 'tv' ? 'TV login' : label === 'netflix' ? 'Open Netflix (PC)' : 'Phone login'}</span>
+                  </a>
+                ))}
+              </div>
+              <button
+                className="btn btn-primary generator-button generator-next-button"
+                onClick={moveToNext}
+                disabled={loading || !adminStatusReady || generationLimitReached}
+              >
+                <span>{generationLimitReached ? 'Generation limit reached' : 'Next cookie'}</span>
+                {!generationLimitReached && <Icon name="arrowRight" size={17} />}
+              </button>
+            </div>
+          )}
+            </section>
+          )}
+
+          {loading && (
+            <section className="generator-loading-state" role="status" aria-live="polite">
+              <div className="generator-loading-header">
+                <strong>Loading stored cookie</strong>
+                <span>Working…</span>
+              </div>
+              <div
+                className="generator-loading-track"
+                role="progressbar"
+                aria-label="Loading stored cookie"
+                aria-valuetext="Generating account details and login links"
+              >
+                <div className="generator-loading-fill" />
+              </div>
+              <p>Generating account details and login links…</p>
+            </section>
+          )}
+        </>
+      )}
     </main>
   )
 }

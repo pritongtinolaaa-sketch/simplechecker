@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Frontend Dev Server",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-Command",
+        "cd frontend; npm run dev"
+      ],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Backend Dev Server",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-Command",
+        "cd backend; .\\venv\\Scripts\\python main.py"
+      ],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Install Frontend Dependencies",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-Command",
+        "cd frontend; npm install"
+      ],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Install Backend Dependencies",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-Command",
+        "cd backend; .\\venv\\Scripts\\pip install -r requirements.txt"
+      ],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Build Frontend",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-Command",
+        "cd frontend; npm run build"
+      ],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "group": "build"
+    }
+  ]
+}

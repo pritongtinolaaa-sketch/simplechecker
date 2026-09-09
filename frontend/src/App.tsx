@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import './App.css'
 import CookieForm from './components/CookieForm'
-import CookiesList from './components/CookiesList'
 import Header from './components/Header'
 import AccountInfo from './components/AccountInfo'
 import AdminCookies from './components/AdminCookies'
-import CookieGenerator from './components/CookieGenerator'
+import CookieGenerator, { type GeneratorState } from './components/CookieGenerator'
 
 interface CheckProgress {
   status: string
@@ -17,16 +16,17 @@ interface CheckProgress {
 }
 
 function App() {
-  const [page, setPage] = useState(
-    window.location.pathname === '/admin/cookies'
-      ? 'admin'
-      : window.location.pathname === '/generator'
-        ? 'generator'
-        : 'checker'
-  )
+  const [page, setPage] = useState(() => {
+    if (window.location.pathname === '/admin/cookies') return 'admin'
+    if (window.location.pathname === '/generator') return 'generator'
+    return 'checker'
+  })
   const [isAdmin, setIsAdmin] = useState(false)
+  const [adminStatusReady, setAdminStatusReady] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [cookies, setCookies] = useState([])
+  const [savingBundleNumber, setSavingBundleNumber] = useState<number | null>(null)
+  const [savedBundleNumbers, setSavedBundleNumbers] = useState<number[]>([])
+  const [generatorCurrent, setGeneratorCurrent] = useState<GeneratorState | null>(null)
   const [cookieBundles, setCookieBundles] = useState<any[]>([])
   const [tokenResults, setTokenResults] = useState<any[]>([])
   const [accountInfo, setAccountInfo] = useState<any>(null)
@@ -43,6 +43,7 @@ function App() {
     axios.get('/api/admin/session')
       .then(({ data }) => setIsAdmin(Boolean(data.is_admin)))
       .catch(() => setIsAdmin(false))
+      .finally(() => setAdminStatusReady(true))
   }, [])
 
   const handleSaveBundle = async (bundle: any) => {
@@ -51,6 +52,8 @@ function App() {
     const account = (accountInfo?.accounts || []).find((item: any) => item.bundle_number === bundle.bundle_number) || {}
     const token = (tokenResults || []).find((item: any) => item.bundle_number === bundle.bundle_number) || {}
 
+    setAccountInfoError('')
+    setSavingBundleNumber(bundle.bundle_number)
     try {
       await axios.post('/api/admin/checked-cookies', {
         bundle_number: bundle.bundle_number,
@@ -58,9 +61,13 @@ function App() {
         account,
         token,
       })
-      alert('Bundle saved to admin storage.')
+      setSavedBundleNumbers(current => current.includes(bundle.bundle_number)
+        ? current
+        : [...current, bundle.bundle_number])
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Unable to save this bundle to admin storage.')
+      setAccountInfoError(error.response?.data?.detail || 'Unable to save this bundle to admin storage.')
+    } finally {
+      setSavingBundleNumber(null)
     }
   }
 
@@ -70,7 +77,8 @@ function App() {
     setAccountInfo(null)
     setTokenResults([])
     setCookieBundles([])
-    setCookies([])
+    setSavingBundleNumber(null)
+    setSavedBundleNumbers([])
     setProgress({
       status: 'starting',
       totalBundles: 0,
@@ -114,7 +122,6 @@ function App() {
         })
         setTokenResults(tokens)
         setCookieBundles(bundles)
-        setCookies(bundles.flatMap((bundle: any) => bundle.cookies || []))
         if (data.status === 'failed') {
           setAccountInfoError(data.error || 'Failed to process cookie bundles')
         } else {
@@ -146,19 +153,20 @@ function App() {
 
   return (
     <div className="app">
-      <Header />
+      <Header isAdmin={isAdmin} />
       <nav className="top-nav">
         <button onClick={() => { window.history.pushState({}, '', '/'); setPage('checker') }}>Checker</button>
         <button onClick={() => { window.history.pushState({}, '', '/admin/cookies'); setPage('admin') }}>Admin storage</button>
         <button onClick={() => { window.history.pushState({}, '', '/generator'); setPage('generator') }}>Cookie generator</button>
-        {isAdmin && <span className="status-ok">Admin logged in</span>}
       </nav>
       {page === 'admin' ? (
         <AdminCookies onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }} />
       ) : page === 'generator' ? (
         <CookieGenerator
           isAdmin={isAdmin}
-          onBack={() => { window.history.pushState({}, '', '/'); setPage('checker') }}
+          adminStatusReady={adminStatusReady}
+          current={generatorCurrent}
+          onCurrentChange={setGeneratorCurrent}
         />
       ) : (
         <main className="app-container">
@@ -190,13 +198,10 @@ function App() {
                 profiles={accountInfo?.profiles}
                 error={accountInfoError}
                 loading={loading}
-              isAdmin={isAdmin}
-              onSaveBundle={handleSaveBundle}
-                cookies={cookies}
-                cookieBundles={cookieBundles}
-                accounts={accountInfo?.accounts}
-                tokenResults={tokenResults}
-                loading={loading}
+                isAdmin={isAdmin}
+                onSaveBundle={handleSaveBundle}
+                savingBundleNumber={savingBundleNumber}
+                savedBundleNumbers={savedBundleNumbers}
               />
             </div>
           </div>

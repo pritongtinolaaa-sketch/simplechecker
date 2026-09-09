@@ -61,7 +61,9 @@ interface AccountInfoProps {
   error?: string;
   loading?: boolean;
   isAdmin?: boolean;
-  onSaveBundle?: (bundle: CookieBundle) => void;
+  onSaveBundle?: (bundle: CookieBundle) => void | Promise<void>;
+  savingBundleNumber?: number | null;
+  savedBundleNumbers?: number[];
 }
 
 const AccountInfo: React.FC<AccountInfoProps> = ({
@@ -84,6 +86,8 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
   loading,
   isAdmin,
   onSaveBundle,
+  savingBundleNumber,
+  savedBundleNumbers = [],
 }) => {
   const hasAccountResults = Boolean(accounts && accounts.length > 0);
   const hasPartialResults =
@@ -344,6 +348,10 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
     const saveButton = bundleIsLive && isAdmin && cookieBundleByNumber.has(account.bundle_number) && (
       <button
         className="btn btn-secondary btn-small bundle-download-btn"
+        disabled={
+          savingBundleNumber === account.bundle_number ||
+          savedBundleNumbers.includes(account.bundle_number)
+        }
         onClick={(event) => {
           event.stopPropagation();
           onSaveBundle?.(cookieBundleByNumber.get(account.bundle_number)!);
@@ -351,7 +359,12 @@ const AccountInfo: React.FC<AccountInfoProps> = ({
         title={`Save Cookie Bundle #${account.bundle_number} to admin storage`}
       >
         <>
-          <Icon name="circleCheck" /> Save
+          <Icon name="circleCheck" />
+          {savingBundleNumber === account.bundle_number
+            ? "Saving…"
+            : savedBundleNumbers.includes(account.bundle_number)
+              ? "Saved"
+              : "Save"}
         </>
       </button>
     );

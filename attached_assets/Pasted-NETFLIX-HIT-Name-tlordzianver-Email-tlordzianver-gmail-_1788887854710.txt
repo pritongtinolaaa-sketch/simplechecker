@@ -1,0 +1,40 @@
+NETFLIX HIT :👇
+
+👤 Name: tlordzianver
+📧 Email: tlordzianver@gmail.com
+🌍 Country: PH
+📦 Plan: Premium
+📅 Member Since: August 2026
+🗓️ Next Billing: UNKNOWN
+💳 Payment: PLDT_BILLED
+📱 Phone: +639620953980
+🎞️ Quality: UHD
+📺 Streams: 4
+💰 Price: N/A
+⏸️ Hold Status: No
+👥 Extra Member: Yes
+✅ Email Verified: Yes
+🛡️ Membership Status: CURRENT_MEMBER
+🎭 Profiles (2): tlordzianver, Sona
+
+--------------------------------------------------------------------------------------------------
+
+NFToken DETAILS :👇
+
+NFToken: BgiQvuvcAxLCAZDONdjAVpn7KZDlGS0a9ALjN2PyOXKaY31hYaatTrqUCbrmgc90cBSp2ybuhL2UTf3ML2O8VnM8tw6QqUj5+3YIOhkKDxXA05sv1ed1y8/q5fbJq4YeAdBtMlvDkyUmvVuwjDfOQz2B3auabRHNYkKcORS9d8aK/ZI88O21Pv4ohZQRetQg7br+EM4XcDyj6BnVFYwPNkdNnd+icP2R5gSySksi1DeoszeYV3O+RhXemyagRMiClRyJfYLAdJzPptQNGAYiDgoM9SUioiv6yIh3uqvD
+🖥️ PC Login: https://netflix.com/?nftoken=BgiQvuvcAxLCAZDONdjAVpn7KZDlGS0a9ALjN2PyOXKaY31hYaatTrqUCbrmgc90cBSp2ybuhL2UTf3ML2O8VnM8tw6QqUj5+3YIOhkKDxXA05sv1ed1y8/q5fbJq4YeAdBtMlvDkyUmvVuwjDfOQz2B3auabRHNYkKcORS9d8aK/ZI88O21Pv4ohZQRetQg7br+EM4XcDyj6BnVFYwPNkdNnd+icP2R5gSySksi1DeoszeYV3O+RhXemyagRMiClRyJfYLAdJzPptQNGAYiDgoM9SUioiv6yIh3uqvD
+📱 Phone Login: https://netflix.com/unsupported?nftoken=BgiQvuvcAxLCAZDONdjAVpn7KZDlGS0a9ALjN2PyOXKaY31hYaatTrqUCbrmgc90cBSp2ybuhL2UTf3ML2O8VnM8tw6QqUj5+3YIOhkKDxXA05sv1ed1y8/q5fbJq4YeAdBtMlvDkyUmvVuwjDfOQz2B3auabRHNYkKcORS9d8aK/ZI88O21Pv4ohZQRetQg7br+EM4XcDyj6BnVFYwPNkdNnd+icP2R5gSySksi1DeoszeYV3O+RhXemyagRMiClRyJfYLAdJzPptQNGAYiDgoM9SUioiv6yIh3uqvD
+⏳ Valid Till (UTC): 2026-09-06 22:51:34 UTC
+
+--------------------------------------------------------------------------------------------------
+
+Checked by: m@nl
+Netflix COOKIE :👇
+
+.netflix.com	TRUE	/	FALSE	1818914782	nfvdid	BQFmAAEBEEdNZHwcqmvkBK8T-o8hYLtgNC_Oz3rhyYZ9P9WvzdbrUQgaMLR1PX37WqKbDtIly2F2SN4PMdppr_ft-r-6Bj6JhkbL0Hnbg8D1aJnNmXb4iKqQzp-NeSsd2n4ScVh7enhpaXgS5zlHy7_54Exlgqe5
+.netflix.com	TRUE	/	TRUE	1819079984	SecureNetflixId	v%3D3%26mac%3DAQEAEQABABTL6QlAoqMCwrH778tNGnXlNU5NsICHuU8.%26dt%3D1787543984420
+.netflix.com	TRUE	/	TRUE	1790956964	gsid	1ef306f7-8555-4482-8ea1-3ab899eb65e1
+.netflix.com	TRUE	/	FALSE	1819094327	OptanonConsent	isGpcEnabled=0&datestamp=Mon+Aug+24+2026+15%3A58%3A47+GMT%2B0800+(Philippine+Standard+Time)&version=202607.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=e80a7666-9ed6-4cec-8f78-6817de114808&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false&isDntEnabled=0&prevHadToken=0
+.netflix.com	TRUE	/	TRUE	1819079984	NetflixId	ct%3DBgjHlOvcAxLDA3nTx-1aJAoHWXh1Opyo7tj3zkTvQmTHgP2eXwOhzmxM_wnX6WCDdCfzicLoIsSdSIl5osVoa68N0ggr8PPAWTjf8tWLIHAkKUU3m8YbPJYSbkPjGp_-a58Rc0ng00m_1-vgrhb-My27eQh5rHyGpMHLNe7lpe83fvyMnuOENicoIJ4oeT7ykh3-c_Ag-kSNZFkFSgImIuj4L2ACFb6NlsF80Sxq-43hE5yVGEM54nDKF47QF3gB0DLb7hvKRu4wK7UjSHVwZV8zKpYwftJkD8vHgDESFMS9zddWhYkZmW6q_xD6npZs5t6NPM4aRnA85sO56TaxalR6Urbn_QV5JpmISiyjx3U8-G066La9ZGkB7ZEoVgAOtsJp9CnqyEGVhkWet3jhPSi3_EM4Uf8ImKECHWg1jPIBt8NFLQJlVyJocgHpvY_JLkJIK_8O7OAhAwcZlydGt_0mHIzdZD_Kj2g5SfO-NL3iL7vXAJQZGaLJc7BgLoOcpFQHxhqQQgqZJgGGD0_pbpV8v1MTey-y4RWNDaodWqXEnkQmrHDCcD_9sQgDig3CgjxicVafsSiveO6tl9Ws_YFOfR3R2pQu75lPxVQYBiIOCgymMdVqMBU9f7HuJII.%26ch%3DAQEAEAABABSSzWTVSw9MNem6uB6NWgFaiWsueN5NmiQ.%26v%3D3%26pg%3DLVJKMUDXMJFNPDIFIRHPYELWEY
+.netflix.com	TRUE	/	FALSE	1795334325	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1795334325	netflix-sans-normal-3-loaded	true

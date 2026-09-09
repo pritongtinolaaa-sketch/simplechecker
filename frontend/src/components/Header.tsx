@@ -1,7 +1,7 @@
 import React from 'react'
 import Icon from './Icon'
 
-const Header: React.FC = () => {
+const Header: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }) => {
   return (
     <header className="header">
       <div className="header-content">
@@ -14,6 +14,12 @@ const Header: React.FC = () => {
           <p className="header-subtitle">Extract and analyze cookies from your browser or files</p>
         </div>
       </div>
+      {isAdmin && (
+        <span className="header-admin-status">
+          <span className="header-admin-dot" />
+          Admin logged in
+        </span>
+      )}
     </header>
   )
 }

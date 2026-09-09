@@ -5,7 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from math import ceil
 import httpx
 import asyncio
 import logging
@@ -17,9 +18,11 @@ import sqlite3
 from pathlib import Path
 import re
 import random
+from time import monotonic
 from dotenv import load_dotenv
 from urllib.parse import unquote
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -137,8 +140,29 @@ class AdminStoreRequest(BaseModel):
     token: dict
 
 
+class GeneratorSettingsRequest(BaseModel):
+    enabled: bool
+    message: str
+
+
 COOKIE_DB_PATH = Path(__file__).resolve().parent / "checked_cookies.db"
 ADMIN_COOKIE_NAME = "cookie_checker_admin"
+GENERATOR_DEVICE_COOKIE = "cookie_checker_generator_device"
+GENERATOR_MAX_GENERATIONS = 5
+GENERATOR_DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+DEFAULT_GENERATOR_MAINTENANCE_MESSAGE = "Under maintenance. Please come back later."
+PHT_TIMEZONE = ZoneInfo("Asia/Manila")
+ADMIN_LOGIN_MAX_ATTEMPTS = 5
+ADMIN_LOGIN_LOCKOUT_SECONDS = 5 * 60
+STORED_HEALTH_CHECK_INTERVAL = timedelta(hours=1)
+STORED_HEALTH_CHECK_POLL_SECONDS = 60
+STORED_HEALTH_CHECK_CONCURRENCY = 3
+STORED_HEALTH_CHECK_BATCH_SIZE = 10
+STORED_HEALTH_CHECK_BATCH_PAUSE_SECONDS = 0.25
+_ADMIN_LOGIN_ATTEMPTS: dict[str, tuple[int, float]] = {}
+_STORED_HEALTH_CHECK_RUNNING = False
+_STORED_HEALTH_CHECK_LOCK = asyncio.Lock()
+_STORED_HEALTH_CHECK_TASK: Optional[asyncio.Task] = None
 
 
 def _cookie_db() -> sqlite3.Connection:
@@ -158,6 +182,56 @@ def _cookie_db() -> sqlite3.Connection:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS generator_usage (
+            device_id TEXT PRIMARY KEY,
+            generation_count INTEGER NOT NULL DEFAULT 0,
+            usage_date TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS generator_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            message TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO generator_settings (id, enabled, message)
+        VALUES (1, 1, ?)
+        """,
+        (DEFAULT_GENERATOR_MAINTENANCE_MESSAGE,),
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stored_health_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_checked_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO stored_health_status (id, last_checked_at)
+        VALUES (1, NULL)
+        """
+    )
+    generator_usage_columns = [
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(generator_usage)"
+        ).fetchall()
+    ]
+    if "usage_date" not in generator_usage_columns:
+        connection.execute(
+            "ALTER TABLE generator_usage ADD COLUMN usage_date TEXT NOT NULL DEFAULT ''"
+        )
     columns = [
         row[1] for row in connection.execute("PRAGMA table_info(checked_cookie_bundles)").fetchall()
     ]
@@ -179,6 +253,62 @@ def _admin_cookie_value() -> str:
     return base64.urlsafe_b64encode(signature).decode("ascii")
 
 
+def _admin_login_client_key(request: Request) -> str:
+    return request.client.host if request.client and request.client.host else "unknown"
+
+
+def _admin_login_lockout_seconds(request: Request) -> int:
+    client_key = _admin_login_client_key(request)
+    state = _ADMIN_LOGIN_ATTEMPTS.get(client_key)
+    if not state:
+        return 0
+
+    _, locked_until = state
+    remaining = locked_until - monotonic()
+    if remaining <= 0:
+        _ADMIN_LOGIN_ATTEMPTS.pop(client_key, None)
+        return 0
+    return max(1, ceil(remaining))
+
+
+def _generator_device_id(request: Request, response: Response) -> str:
+    device_id = request.cookies.get(GENERATOR_DEVICE_COOKIE)
+    if device_id:
+        return device_id
+
+    device_id = uuid4().hex
+    response.set_cookie(
+        GENERATOR_DEVICE_COOKIE,
+        device_id,
+        max_age=GENERATOR_DEVICE_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        path="/",
+    )
+    return device_id
+
+
+def _generator_usage_date() -> str:
+    return datetime.now(PHT_TIMEZONE).date().isoformat()
+
+
+def _get_generator_settings() -> dict:
+    with _cookie_db() as connection:
+        row = connection.execute(
+            "SELECT enabled, message FROM generator_settings WHERE id = 1"
+        ).fetchone()
+    if row is None:
+        return {
+            "enabled": True,
+            "message": DEFAULT_GENERATOR_MAINTENANCE_MESSAGE,
+        }
+    return {
+        "enabled": bool(row["enabled"]),
+        "message": row["message"] or DEFAULT_GENERATOR_MAINTENANCE_MESSAGE,
+    }
+
+
 def _is_admin(request: Request) -> bool:
     supplied = request.cookies.get(ADMIN_COOKIE_NAME, "")
     try:
@@ -193,13 +323,79 @@ def _require_admin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def _normalize_account_email(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().casefold()
+
+
+def _account_email_from_json(account_json: str) -> str:
+    try:
+        account = json.loads(account_json)
+    except (TypeError, json.JSONDecodeError):
+        return ""
+    return _normalize_account_email(account.get("email") if isinstance(account, dict) else None)
+
+
+def _remove_duplicate_account_bundles(
+    connection: sqlite3.Connection,
+    email: str,
+    keep_id: Optional[int] = None,
+) -> int:
+    normalized_email = _normalize_account_email(email)
+    if not normalized_email:
+        return 0
+
+    rows = connection.execute(
+        "SELECT id, account_json FROM checked_cookie_bundles ORDER BY id DESC"
+    ).fetchall()
+    duplicate_ids = [
+        row["id"]
+        for row in rows
+        if row["id"] != keep_id
+        and _account_email_from_json(row["account_json"]) == normalized_email
+    ]
+    if duplicate_ids:
+        connection.executemany(
+            "DELETE FROM checked_cookie_bundles WHERE id = ?",
+            [(bundle_id,) for bundle_id in duplicate_ids],
+        )
+    return len(duplicate_ids)
+
+
+def _remove_existing_duplicate_accounts(connection: sqlite3.Connection) -> int:
+    rows = connection.execute(
+        "SELECT id, account_json FROM checked_cookie_bundles ORDER BY id DESC"
+    ).fetchall()
+    seen_emails: set[str] = set()
+    duplicate_ids: list[tuple[int]] = []
+    for row in rows:
+        email = _account_email_from_json(row["account_json"])
+        if email and email in seen_emails:
+            duplicate_ids.append((row["id"],))
+        elif email:
+            seen_emails.add(email)
+
+    if duplicate_ids:
+        connection.executemany(
+            "DELETE FROM checked_cookie_bundles WHERE id = ?",
+            duplicate_ids,
+        )
+    return len(duplicate_ids)
+
+
 def _store_checked_bundle(
     bundle_number: int,
     bundle_cookies: List[Cookie],
     account_result: dict,
     token_result: dict,
-) -> int:
+) -> tuple[int, int]:
+    account_email = _normalize_account_email(account_result.get("email"))
     with _cookie_db() as connection:
+        deleted_duplicate_count = _remove_duplicate_account_bundles(
+            connection,
+            account_email,
+        )
         cursor = connection.execute(
             """
             INSERT INTO checked_cookie_bundles (
@@ -218,7 +414,7 @@ def _store_checked_bundle(
             ),
         )
         connection.commit()
-    return int(cursor.lastrowid)
+    return int(cursor.lastrowid), deleted_duplicate_count
 
 
 async def _evaluate_bundle_record(row: sqlite3.Row) -> dict:
@@ -264,13 +460,331 @@ async def _evaluate_bundle_record(row: sqlite3.Row) -> dict:
         }
 
     return {
-        "success": bool(account_success and success and nftoken),
+        "success": bool(account_success or (success and nftoken)),
         "bundle_number": row["bundle_number"],
         "checked_at": datetime.utcnow().isoformat(),
         "account": final_account,
         "token": final_token,
         "links": links,
     }
+
+
+async def _refresh_stored_bundle_token(row: sqlite3.Row) -> dict:
+    cookie_data = json.loads(row["cookies_json"])
+    cookie_map = {
+        item["name"]: item["value"]
+        for item in cookie_data
+        if item.get("name") and item.get("value")
+    }
+
+    if not cookie_map:
+        return {
+            "success": False,
+            "bundle_number": row["bundle_number"],
+            "checked_at": row["checked_at"],
+            "token": {
+                "bundle_number": row["bundle_number"],
+                "success": False,
+                "error": "Stored bundle has no readable cookies.",
+            },
+            "links": {},
+        }
+
+    success, nftoken, token_error = await generate_nftoken(cookie_map)
+    token = {
+        "bundle_number": row["bundle_number"],
+        "success": bool(success and nftoken),
+        "nftoken": nftoken,
+        "error": token_error if not (success and nftoken) else None,
+    }
+    links = {}
+    if nftoken:
+        links = {
+            "tv": f"https://www.netflix.com/tv2?nftoken={nftoken}",
+            "netflix": f"https://netflix.com/?nftoken={nftoken}",
+            "phone": f"https://www.netflix.com/unsupported?nftoken={nftoken}",
+        }
+
+    return {
+        "success": bool(success and nftoken),
+        "bundle_number": row["bundle_number"],
+        "checked_at": datetime.utcnow().isoformat(),
+        "token": token,
+        "links": links,
+    }
+
+
+def _persist_stored_bundle_refresh(
+    bundle_id: int,
+    refreshed: dict,
+    account_result: Optional[dict] = None,
+) -> None:
+    token_result = refreshed.get("token") or {}
+    checked_at = refreshed.get("checked_at") or datetime.utcnow().isoformat()
+
+    with _cookie_db() as connection:
+        stored = connection.execute(
+            "SELECT account_json, account_success FROM checked_cookie_bundles WHERE id = ?",
+            (bundle_id,),
+        ).fetchone()
+        if stored is None:
+            return
+
+        account_json = stored["account_json"]
+        account_success = bool(stored["account_success"])
+        if account_result is not None:
+            account_success = bool(account_result.get("success"))
+            if account_success:
+                account_json = json.dumps(account_result)
+
+        connection.execute(
+            """
+            UPDATE checked_cookie_bundles
+            SET checked_at = ?, account_success = ?, token_success = ?,
+                account_json = ?, token_json = ?
+            WHERE id = ?
+            """,
+            (
+                checked_at,
+                int(account_success),
+                int(bool(token_result.get("success"))),
+                account_json,
+                json.dumps(token_result),
+                bundle_id,
+            ),
+        )
+        connection.commit()
+
+
+async def _check_bundle_account_after_token_failure(
+    row: sqlite3.Row,
+) -> Optional[dict]:
+    try:
+        cookie_data = json.loads(row["cookies_json"])
+        cookie_map = {
+            item["name"]: item["value"]
+            for item in cookie_data
+            if item.get("name") and item.get("value")
+        }
+        if not cookie_map:
+            return {
+                "bundle_number": row["bundle_number"],
+                "success": False,
+                "error": "Stored bundle has no readable cookies.",
+            }
+
+        account_success, account_info, account_error = await get_netflix_account_info(
+            cookie_map
+        )
+        if account_success and account_info:
+            return {"success": True, **account_info}
+        return {
+            "bundle_number": row["bundle_number"],
+            "success": False,
+            "error": account_error or "Account details unavailable for this cookie bundle.",
+        }
+    except Exception as error:
+        logging.warning(
+            "Account check after token refresh failed for bundle %s: %s",
+            row["id"],
+            error,
+        )
+        return {
+            "bundle_number": row["bundle_number"],
+            "success": False,
+            "error": "Unable to verify this cookie bundle.",
+        }
+
+
+def _get_stored_health_summary() -> dict:
+    with _cookie_db() as connection:
+        counts = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_count,
+                SUM(CASE WHEN account_success = 0 AND token_success = 0 THEN 1 ELSE 0 END)
+                    AS dead_count
+            FROM checked_cookie_bundles
+            """
+        ).fetchone()
+        status = connection.execute(
+            "SELECT last_checked_at FROM stored_health_status WHERE id = 1"
+        ).fetchone()
+
+    last_checked_at = status["last_checked_at"] if status else None
+    next_check_at = None
+    if last_checked_at:
+        try:
+            next_check_at = (
+                datetime.fromisoformat(last_checked_at) + STORED_HEALTH_CHECK_INTERVAL
+            ).isoformat()
+        except ValueError:
+            next_check_at = None
+
+    return {
+        "total_count": int(counts["total_count"] or 0),
+        "dead_count": int(counts["dead_count"] or 0),
+        "last_checked_at": last_checked_at,
+        "next_check_at": next_check_at,
+        "is_checking": _STORED_HEALTH_CHECK_RUNNING,
+    }
+
+
+def _stored_health_check_due() -> bool:
+    if _STORED_HEALTH_CHECK_RUNNING:
+        return False
+    with _cookie_db() as connection:
+        status = connection.execute(
+            "SELECT last_checked_at FROM stored_health_status WHERE id = 1"
+        ).fetchone()
+    if not status or not status["last_checked_at"]:
+        return True
+    try:
+        last_checked_at = datetime.fromisoformat(status["last_checked_at"])
+    except ValueError:
+        return True
+    return datetime.utcnow() - last_checked_at >= STORED_HEALTH_CHECK_INTERVAL
+
+
+async def _run_stored_bundle_health_check() -> None:
+    global _STORED_HEALTH_CHECK_RUNNING
+    async with _STORED_HEALTH_CHECK_LOCK:
+        if _STORED_HEALTH_CHECK_RUNNING:
+            return
+        _STORED_HEALTH_CHECK_RUNNING = True
+
+    try:
+        with _cookie_db() as connection:
+            rows = connection.execute(
+                "SELECT * FROM checked_cookie_bundles ORDER BY id ASC"
+            ).fetchall()
+
+        updated_count = 0
+        dead_count = 0
+
+        semaphore = asyncio.Semaphore(STORED_HEALTH_CHECK_CONCURRENCY)
+
+        async def check_row(row: sqlite3.Row):
+            async with semaphore:
+                try:
+                    return row["id"], await _evaluate_bundle_record(row), None
+                except Exception as error:
+                    return row["id"], None, str(error)
+
+        for batch_start in range(0, len(rows), STORED_HEALTH_CHECK_BATCH_SIZE):
+            batch = rows[batch_start : batch_start + STORED_HEALTH_CHECK_BATCH_SIZE]
+            results = await asyncio.gather(*(check_row(row) for row in batch))
+
+            with _cookie_db() as connection:
+                for bundle_id, result, error in results:
+                    stored = connection.execute(
+                        "SELECT account_json, token_json FROM checked_cookie_bundles WHERE id = ?",
+                        (bundle_id,),
+                    ).fetchone()
+                    if stored is None:
+                        continue
+
+                    if result is None:
+                        account_json = stored["account_json"]
+                        token_json = stored["token_json"]
+                        account_success = 0
+                        token_success = 0
+                        logging.warning(
+                            "Stored bundle health check failed for bundle %s: %s",
+                            bundle_id,
+                            error,
+                        )
+                    else:
+                        account = result["account"]
+                        token = result["token"]
+                        account_json = stored["account_json"]
+                        if account.get("success"):
+                            account_json = json.dumps(account)
+                        token_json = json.dumps(token)
+                        account_success = int(bool(account.get("success")))
+                        token_success = int(bool(token.get("success")))
+
+                    if not account_success and not token_success:
+                        dead_count += 1
+
+                    connection.execute(
+                        """
+                        UPDATE checked_cookie_bundles
+                        SET checked_at = ?, account_success = ?, token_success = ?,
+                            account_json = ?, token_json = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            result["checked_at"] if result else datetime.utcnow().isoformat(),
+                            account_success,
+                            token_success,
+                            account_json,
+                            token_json,
+                            bundle_id,
+                        ),
+                    )
+                    updated_count += 1
+                connection.commit()
+
+            logging.info(
+                "Stored bundle health check batch completed: %s-%s of %s",
+                batch_start + 1,
+                batch_start + len(batch),
+                len(rows),
+            )
+            if batch_start + len(batch) < len(rows):
+                await asyncio.sleep(STORED_HEALTH_CHECK_BATCH_PAUSE_SECONDS)
+
+        with _cookie_db() as connection:
+            completed_at = datetime.utcnow().isoformat()
+            connection.execute(
+                "UPDATE stored_health_status SET last_checked_at = ? WHERE id = 1",
+                (completed_at,),
+            )
+            connection.commit()
+
+        logging.info(
+            "Stored bundle health check completed: %s checked, %s dead",
+            updated_count,
+            dead_count,
+        )
+    finally:
+        _STORED_HEALTH_CHECK_RUNNING = False
+
+
+async def _stored_health_check_scheduler() -> None:
+    await asyncio.sleep(2)
+    while True:
+        try:
+            if _stored_health_check_due():
+                await _run_stored_bundle_health_check()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("Stored bundle health check failed")
+        await asyncio.sleep(STORED_HEALTH_CHECK_POLL_SECONDS)
+
+
+@app.on_event("startup")
+async def start_stored_health_check_scheduler():
+    global _STORED_HEALTH_CHECK_TASK
+    _cookie_db().close()
+    _STORED_HEALTH_CHECK_TASK = asyncio.create_task(
+        _stored_health_check_scheduler()
+    )
+
+
+@app.on_event("shutdown")
+async def stop_stored_health_check_scheduler():
+    global _STORED_HEALTH_CHECK_TASK
+    if _STORED_HEALTH_CHECK_TASK is None:
+        return
+    _STORED_HEALTH_CHECK_TASK.cancel()
+    try:
+        await _STORED_HEALTH_CHECK_TASK
+    except asyncio.CancelledError:
+        pass
+    _STORED_HEALTH_CHECK_TASK = None
 
 
 # ===== DISCORD LOGGER WITH DEBUG =====
@@ -390,6 +904,10 @@ COMPACT_NETFLIX_RECORD_START = re.compile(
     re.IGNORECASE,
 )
 
+NETFLIX_HIT_SECTION_START = re.compile(
+    r"(?mi)^\s*NETFLIX\s+HIT(?:\s*:|\s*$)"
+)
+
 
 def _split_compact_netflix_records(line: str) -> List[str]:
     starts = [match.start() for match in COMPACT_NETFLIX_RECORD_START.finditer(line)]
@@ -463,6 +981,21 @@ def parse_netscape_cookies(text: str) -> tuple[List[Cookie], List[str]]:
                 )
                 cookies.append(cookie)
                 continue
+            cookie_header_match = re.search(r"\bcookie\s*:\s*(.+)$", line, re.IGNORECASE)
+            if cookie_header_match:
+                parsed_any = False
+                for pair in cookie_header_match.group(1).split(";"):
+                    if "=" not in pair:
+                        continue
+                    cookie_name, _, cookie_value = pair.partition("=")
+                    cookie_name = cookie_name.strip()
+                    if is_cookie_name(cookie_name) and cookie_value.strip():
+                        cookies.append(
+                            Cookie(name=cookie_name, value=cookie_value.strip())
+                        )
+                        parsed_any = True
+                if parsed_any:
+                    continue
             compact_records = _split_compact_netflix_records(line)
             if compact_records:
                 parsed_any = False
@@ -594,6 +1127,37 @@ def parse_cookie_bundles(
             return ([(cookies, errors)] if cookies else []), errors
     if format_type not in ("auto", "netscape"):
         raise ValueError("Invalid format_type. Must be 'netscape', 'json', or 'auto'")
+    hit_starts = list(NETFLIX_HIT_SECTION_START.finditer(text))
+    if len(hit_starts) > 1:
+        bundles = []
+        all_errors = []
+        for index, match in enumerate(hit_starts):
+            section_end = (
+                hit_starts[index + 1].start()
+                if index + 1 < len(hit_starts)
+                else len(text)
+            )
+            report_bundle = text[match.start() : section_end]
+            cookies, errors = parse_netscape_cookies(report_bundle)
+            if cookies:
+                bundles.append((cookies, errors))
+            all_errors.extend(errors)
+        return bundles, all_errors
+    report_bundles = re.split(
+        r"(?mi)^\s*=+\s*hit\s*#\d+\s*=+\s*$",
+        text,
+    )
+    if len(report_bundles) > 1:
+        bundles = []
+        all_errors = []
+        for report_bundle in report_bundles:
+            if not report_bundle.strip():
+                continue
+            cookies, errors = parse_netscape_cookies(report_bundle)
+            if cookies:
+                bundles.append((cookies, errors))
+            all_errors.extend(errors)
+        return bundles, all_errors
     raw_bundles = re.split(r"(?m)^\s*=+\s*$", text)
     if len(raw_bundles) == 1:
         cookies, errors = parse_netscape_cookies(text)
@@ -1688,12 +2252,38 @@ async def get_bundle_check_status(job_id: str):
 
 
 @app.post("/api/admin/login")
-async def admin_login(login: AdminLoginRequest, response: Response):
+async def admin_login(login: AdminLoginRequest, request: Request, response: Response):
     expected_password = os.getenv("COOKIE_STORAGE_PASSWORD")
     if not expected_password:
         raise HTTPException(status_code=503, detail="Admin login is not configured")
+
+    client_key = _admin_login_client_key(request)
+    now = monotonic()
+    attempts, locked_until = _ADMIN_LOGIN_ATTEMPTS.get(client_key, (0, 0.0))
+    if locked_until > now:
+        retry_after = max(1, ceil(locked_until - now))
+        raise HTTPException(
+            status_code=429,
+            detail="Too many incorrect password attempts. Please try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    if locked_until:
+        attempts = 0
+
     if not hmac.compare_digest(login.password, expected_password):
+        attempts += 1
+        if attempts >= ADMIN_LOGIN_MAX_ATTEMPTS:
+            locked_until = now + ADMIN_LOGIN_LOCKOUT_SECONDS
+            _ADMIN_LOGIN_ATTEMPTS[client_key] = (attempts, locked_until)
+            raise HTTPException(
+                status_code=429,
+                detail="Too many incorrect password attempts. Please try again later.",
+                headers={"Retry-After": str(ADMIN_LOGIN_LOCKOUT_SECONDS)},
+            )
+        _ADMIN_LOGIN_ATTEMPTS[client_key] = (attempts, 0.0)
         raise HTTPException(status_code=401, detail="Invalid admin password")
+
+    _ADMIN_LOGIN_ATTEMPTS.pop(client_key, None)
     response.set_cookie(
         ADMIN_COOKIE_NAME,
         _admin_cookie_value(),
@@ -1714,79 +2304,192 @@ async def admin_logout(response: Response):
 
 @app.get("/api/admin/session")
 async def admin_session(request: Request):
-    return {"is_admin": _is_admin(request)}
+    return {
+        "is_admin": _is_admin(request),
+        "login_lockout_seconds": _admin_login_lockout_seconds(request),
+    }
 
 
 @app.get("/api/stored-cookies")
 async def list_public_stored_cookies():
     with _cookie_db() as connection:
         rows = connection.execute(
-            "SELECT id, bundle_number, checked_at, account_success, token_success, account_json FROM checked_cookie_bundles ORDER BY id DESC"
+            "SELECT id, bundle_number, checked_at, account_success, token_success, account_json FROM checked_cookie_bundles ORDER BY id ASC"
         ).fetchall()
     return {
         "items": [
             {
                 "id": row["id"],
+                "storage_position": position,
                 "bundle_number": row["bundle_number"],
                 "checked_at": row["checked_at"],
                 "account_success": bool(row["account_success"]),
                 "token_success": bool(row["token_success"]),
                 "account": json.loads(row["account_json"]),
             }
-            for row in rows
+            for position, row in enumerate(rows, start=1)
         ]
     }
 
 
+@app.get("/api/stored-cookies/health")
+async def get_public_stored_cookie_health():
+    return _get_stored_health_summary()
+
+
+@app.get("/api/generator/status")
+async def get_generator_status():
+    return _get_generator_settings()
+
+
+@app.post("/api/admin/generator/settings")
+async def update_generator_settings(
+    request: Request,
+    payload: GeneratorSettingsRequest,
+):
+    _require_admin(request)
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Maintenance message cannot be empty")
+    if len(message) > 500:
+        raise HTTPException(
+            status_code=422,
+            detail="Maintenance message must be 500 characters or fewer",
+        )
+
+    with _cookie_db() as connection:
+        connection.execute(
+            """
+            UPDATE generator_settings
+            SET enabled = ?, message = ?
+            WHERE id = 1
+            """,
+            (int(payload.enabled), message),
+        )
+        connection.commit()
+    return _get_generator_settings()
+
+
 @app.get("/api/stored-cookies/next")
-async def get_next_stored_cookie():
+async def get_next_stored_cookie(request: Request, response: Response):
+    generator_settings = _get_generator_settings()
+    if not generator_settings["enabled"]:
+        raise HTTPException(status_code=503, detail=generator_settings["message"])
+
     with _cookie_db() as connection:
         rows = connection.execute(
-            "SELECT * FROM checked_cookie_bundles ORDER BY id DESC"
+            "SELECT * FROM checked_cookie_bundles ORDER BY id ASC"
         ).fetchall()
     if not rows:
         raise HTTPException(status_code=404, detail="No stored cookie bundles available")
 
-    row = random.choice(rows)
-    storage_account = json.loads(row["account_json"])
-    storage_token = json.loads(row["token_json"])
-    evaluated = await _evaluate_bundle_record(row)
+    is_admin = _is_admin(request)
+    generation_count = None
+    generation_date = None
+    if not is_admin:
+        device_id = _generator_device_id(request, response)
+        usage_date = _generator_usage_date()
+        now_iso = datetime.now(PHT_TIMEZONE).isoformat()
+        with _cookie_db() as connection:
+            usage = connection.execute(
+                "SELECT generation_count, usage_date FROM generator_usage WHERE device_id = ?",
+                (device_id,),
+            ).fetchone()
+            current_count = (
+                int(usage["generation_count"])
+                if usage and usage["usage_date"] == usage_date
+                else 0
+            )
+            if current_count >= GENERATOR_MAX_GENERATIONS:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        "Daily cookie generation limit reached. "
+                        "Generations reset at 12:00 AM PHT."
+                    ),
+                )
+            next_count = current_count + 1
+            connection.execute(
+                """
+                INSERT INTO generator_usage (device_id, generation_count, usage_date, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                    generation_count = excluded.generation_count,
+                    usage_date = excluded.usage_date,
+                    updated_at = excluded.updated_at
+                """,
+                (device_id, next_count, usage_date, now_iso),
+            )
+            generation_count = next_count
+            generation_date = usage_date
 
-    account_data = evaluated["account"]
-    if isinstance(storage_account, dict) and storage_account.get("email"):
-        account_data = {**storage_account, **account_data}
-    if account_data.get("success") is False and storage_account.get("success") is True:
-        account_data = {**storage_account, **account_data}
+    candidates = list(enumerate(rows))
+    random.shuffle(candidates)
+    last_refresh_error = "No working stored cookie bundles are available right now."
 
-    token_data = evaluated["token"]
-    if isinstance(storage_token, dict) and storage_token.get("nftoken"):
-        token_data = {**storage_token, **token_data}
-    if token_data.get("success") is False and storage_token.get("success") is True:
-        token_data = {**storage_token, **token_data}
+    for selected_index, row in candidates:
+        try:
+            refreshed = await _refresh_stored_bundle_token(row)
+        except Exception as error:
+            logging.warning(
+                "Stored bundle token refresh failed for bundle %s: %s",
+                row["id"],
+                error,
+            )
+            refreshed = {
+                "success": False,
+                "bundle_number": row["bundle_number"],
+                "checked_at": datetime.utcnow().isoformat(),
+                "token": {
+                    "bundle_number": row["bundle_number"],
+                    "success": False,
+                    "error": "Unable to refresh the Netflix token.",
+                },
+                "links": {},
+            }
 
-    links = evaluated["links"]
-    if token_data.get("nftoken"):
-        links = {
-            "tv": f"https://www.netflix.com/tv2?nftoken={token_data['nftoken']}",
-            "netflix": f"https://netflix.com/?nftoken={token_data['nftoken']}",
-            "phone": f"https://www.netflix.com/unsupported?nftoken={token_data['nftoken']}",
+        account_data = json.loads(row["account_json"])
+        if not isinstance(account_data, dict):
+            account_data = {}
+
+        account_check = None
+        if not refreshed["success"]:
+            account_check = await _check_bundle_account_after_token_failure(row)
+            if account_check:
+                account_data = account_check
+            last_refresh_error = (
+                refreshed["token"].get("error")
+                or "This stored cookie bundle could not refresh its token."
+            )
+
+        _persist_stored_bundle_refresh(row["id"], refreshed, account_check)
+
+        if not refreshed["success"]:
+            continue
+
+        storage_position = selected_index + 1
+        token_data = refreshed["token"]
+        return {
+            "success": True,
+            "id": row["id"],
+            "storage_position": storage_position,
+            "bundle_number": row["bundle_number"],
+            "generation_count": generation_count,
+            "generation_limit": None if is_admin else GENERATOR_MAX_GENERATIONS,
+            "generation_date": generation_date,
+            "checked_at": refreshed["checked_at"],
+            "account": account_data,
+            "token": token_data,
+            "links": refreshed["links"],
         }
 
-    return {
-        "success": bool(account_data.get("success") or token_data.get("success") or bool(token_data.get("nftoken"))),
-        "id": row["id"],
-        "bundle_number": row["bundle_number"],
-        "checked_at": evaluated["checked_at"],
-        "account": account_data,
-        "token": token_data,
-        "links": links,
-    }
+    raise HTTPException(status_code=410, detail=last_refresh_error)
 
 
 @app.post("/api/admin/checked-cookies")
 async def save_checked_cookies(request: Request, payload: AdminStoreRequest):
     _require_admin(request)
-    bundle_id = _store_checked_bundle(
+    bundle_id, deleted_duplicate_count = _store_checked_bundle(
         payload.bundle_number,
         payload.cookies,
         payload.account or {},
@@ -1796,6 +2499,7 @@ async def save_checked_cookies(request: Request, payload: AdminStoreRequest):
         "success": True,
         "id": bundle_id,
         "bundle_number": payload.bundle_number,
+        "deleted_duplicate_count": deleted_duplicate_count,
     }
 
 
@@ -1803,13 +2507,17 @@ async def save_checked_cookies(request: Request, payload: AdminStoreRequest):
 async def list_checked_cookies(request: Request):
     _require_admin(request)
     with _cookie_db() as connection:
+        _remove_existing_duplicate_accounts(connection)
+        connection.commit()
         rows = connection.execute(
-            "SELECT * FROM checked_cookie_bundles ORDER BY id DESC"
+            "SELECT * FROM checked_cookie_bundles ORDER BY id ASC"
         ).fetchall()
+    health = _get_stored_health_summary()
     return {
         "items": [
             {
                 "id": row["id"],
+                "storage_position": position,
                 "bundle_number": row["bundle_number"],
                 "checked_at": row["checked_at"],
                 "account_success": bool(row["account_success"]),
@@ -1818,8 +2526,9 @@ async def list_checked_cookies(request: Request):
                 "token": json.loads(row["token_json"]),
                 "cookies": json.loads(row["cookies_json"]),
             }
-            for row in rows
-        ]
+            for position, row in enumerate(rows, start=1)
+        ],
+        "health": health,
     }
 
 
@@ -1833,29 +2542,70 @@ async def refresh_checked_cookies(bundle_id: int, request: Request):
         if row is None:
             raise HTTPException(status_code=404, detail="Stored bundle not found")
 
-        evaluated = await _evaluate_bundle_record(row)
+        cookie_data = json.loads(row["cookies_json"])
+        cookie_map = {
+            item["name"]: item["value"]
+            for item in cookie_data
+            if item.get("name") and item.get("value")
+        }
+        if not cookie_map:
+            raise HTTPException(
+                status_code=422,
+                detail="Stored bundle has no readable cookies to refresh.",
+            )
+
+        token_success, nftoken, token_error = await generate_nftoken(cookie_map)
+        checked_at = datetime.utcnow().isoformat()
+        token_result = {
+            "bundle_number": row["bundle_number"],
+            "success": bool(token_success and nftoken),
+            "nftoken": nftoken,
+            "error": token_error if not (token_success and nftoken) else None,
+        }
+        account_result = json.loads(row["account_json"])
+        links = {}
+        if nftoken:
+            links = {
+                "tv": f"https://www.netflix.com/tv2?nftoken={nftoken}",
+                "netflix": f"https://netflix.com/?nftoken={nftoken}",
+                "phone": f"https://www.netflix.com/unsupported?nftoken={nftoken}",
+            }
+
         cursor = connection.execute(
             """
             UPDATE checked_cookie_bundles
-            SET checked_at = ?, account_success = ?, token_success = ?, account_json = ?, token_json = ?
+            SET checked_at = ?, token_success = ?, token_json = ?
             WHERE id = ?
             """,
             (
-                evaluated["checked_at"],
-                int(bool(evaluated["account"].get("success"))),
-                int(bool(evaluated["token"].get("success"))),
-                json.dumps(evaluated["account"]),
-                json.dumps(evaluated["token"]),
+                checked_at,
+                int(bool(token_result.get("success"))),
+                json.dumps(token_result),
                 bundle_id,
             ),
         )
         connection.commit()
     return {
-        "success": evaluated["success"],
-        "bundle_number": evaluated["bundle_number"],
-        "account": evaluated["account"],
-        "token": evaluated["token"],
-        "links": evaluated["links"],
+        "success": bool(token_result.get("success")),
+        "bundle_number": row["bundle_number"],
+        "checked_at": checked_at,
+        "account": account_result,
+        "token": token_result,
+        "links": links,
+    }
+
+
+@app.delete("/api/admin/checked-cookies/dead")
+async def delete_dead_checked_cookies(request: Request):
+    _require_admin(request)
+    with _cookie_db() as connection:
+        cursor = connection.execute(
+            "DELETE FROM checked_cookie_bundles WHERE account_success = 0 AND token_success = 0"
+        )
+        connection.commit()
+    return {
+        "deleted": cursor.rowcount,
+        "health": _get_stored_health_summary(),
     }
 
 
@@ -1870,17 +2620,6 @@ async def delete_checked_cookies(bundle_id: int, request: Request):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stored bundle not found")
     return Response(status_code=204)
-
-
-@app.delete("/api/admin/checked-cookies/dead")
-async def delete_dead_checked_cookies(request: Request):
-    _require_admin(request)
-    with _cookie_db() as connection:
-        cursor = connection.execute(
-            "DELETE FROM checked_cookie_bundles WHERE account_success = 0 AND token_success = 0"
-        )
-        connection.commit()
-    return {"deleted": cursor.rowcount}
 
 
 @app.get("/test-discord")
